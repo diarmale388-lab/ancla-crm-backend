@@ -30,7 +30,7 @@ if db_url and not db_url.startswith("sqlite"):
             connect_args={"connect_timeout": 3}
         )
         with test_engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
+            conn.execute(text("SELECT count(*) FROM users"))
         pg_engine = test_engine
         logger.info("Conexión a PostgreSQL (Neon) verificada exitosamente.")
     except Exception as e_pg:
