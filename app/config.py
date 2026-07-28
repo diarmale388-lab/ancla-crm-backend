@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     
     # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://neondb_owner:npg_u0jKzE8lWQfb@ep-misty-night-aw10uqbm.c-12.us-east-1.aws.neon.tech/neondb?sslmode=require")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./crm.db")
     REDIS_URL: str = os.getenv("REDIS_URL", "rediss://default:gQAAAAAAAqynAAIgcDJkZmI1NDdlY2JlNzA0NzAyOWI3YjJlZDQ3Njg3MGQwMA@actual-mammal-175271.upstash.io:6379")
     
     # Security / JWT
