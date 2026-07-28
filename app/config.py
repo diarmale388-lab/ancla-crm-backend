@@ -1,0 +1,39 @@
+import os
+from pydantic_settings import BaseSettings
+from typing import Optional
+
+class Settings(BaseSettings):
+    PROJECT_NAME: str = "CRM Omnicanal Antigravity"
+    API_V1_STR: str = "/api/v1"
+    
+    # Database
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://neondb_owner:npg_u0jKzE8lWQfb@ep-misty-night-aw10uqbm.c-12.us-east-1.aws.neon.tech/neondb?sslmode=require")
+    REDIS_URL: str = os.getenv("REDIS_URL", "rediss://default:gQAAAAAAAqynAAIgcDJkZmI1NDdlY2JlNzA0NzAyOWI3YjJlZDQ3Njg3MGQwMA@actual-mammal-175271.upstash.io:6379")
+    
+    # Security / JWT
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "super-secret-key-change-in-production-1234567890")
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    
+    # Meta / WhatsApp Integration
+    META_APP_ID: Optional[str] = os.getenv("META_APP_ID")
+    META_APP_SECRET: Optional[str] = os.getenv("META_APP_SECRET")
+    META_VERIFY_TOKEN: str = os.getenv("META_VERIFY_TOKEN", "antigravity_verify_token_123")
+    META_ACCESS_TOKEN: Optional[str] = os.getenv("META_ACCESS_TOKEN", "EAAjwLoRIerUBSE7kR9jMOjF9AdtAdZAj1UB8Wam1FRGcOdsqxVgZCJ2flDLA1DBmeHTSRiIj2vqblDx5KAUEpKQzZBQdmAEAqfKxkIro7NRuoswtgnmXeFkVZApzZBMVFmcHGaqI1oJAEkY8oDxMVfWNzFQmQiUfz5YuAg1XrNLdD7ll4mLZCTxVw9ZBtd2ip0Vu2Wysmu0ZBG9eUsfgYxCZBZBXrnXopDI6WrPGZAaM0b5tTxsheZBZCQjUzdZBIAPHTpd3L3F4qi7X9ep9VvNGFozHzNdwZDZD")
+    WHATSAPP_PHONE_NUMBER_ID: Optional[str] = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "1309006675619043")
+    WHATSAPP_BUSINESS_ACCOUNT_ID: Optional[str] = os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID")
+    
+    # AI Engine
+    OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
+    GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6JwTVDiq80T2UerXL_hBTFXJdvCJ1TQ_aoqpuQoloEdvw")
+    
+    # SMS Integration (Ejemplo: Twilio)
+    TWILIO_ACCOUNT_SID: Optional[str] = os.getenv("TWILIO_ACCOUNT_SID")
+    TWILIO_AUTH_TOKEN: Optional[str] = os.getenv("TWILIO_AUTH_TOKEN")
+    TWILIO_FROM_NUMBER: Optional[str] = os.getenv("TWILIO_FROM_NUMBER")
+    
+    class Config:
+        case_sensitive = True
+        env_file = ".env"
+
+settings = Settings()

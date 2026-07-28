@@ -1,0 +1,230 @@
+from datetime import timedelta
+from typing import Any
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models.base import User, UserRole
+from app.schemas.user import Token, UserResponse, UserCreate
+from app.core import security
+from app.core.deps import get_current_user, get_current_active_admin
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+@router.post("/login", response_model=Token)
+def login_access_token(
+    db: Session = Depends(get_db),
+    form_data: OAuth2PasswordRequestForm = Depends()
+) -> Any:
+    """
+    OAuth2 compatible token login, get an access token for future requests.
+    """
+    import traceback
+    try:
+        user = db.query(User).filter(User.email == form_data.username).first()
+        if not user or not security.verify_password(form_data.password, user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email o contraseña incorrectos",
+            )
+        elif not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Usuario inactivo",
+            )
+        
+        access_token_expires = timedelta(minutes=security.settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        return {
+            "access_token": security.create_access_token(
+                user.id, expires_delta=access_token_expires
+            ),
+            "token_type": "bearer",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        tb = traceback.format_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"DEBUG TRACEBACK:\n{tb}"
+        )
+
+@router.get("/me", response_model=UserResponse)
+def read_user_me(
+    current_user: User = Depends(get_current_user)
+) -> Any:
+    """
+    Get current user profile.
+    """
+    return current_user
+
+@router.post("/register", response_model=UserResponse)
+def register_user(
+    *,
+    db: Session = Depends(get_db),
+    user_in: UserCreate,
+    current_user: User = Depends(get_current_active_admin) # Solo administradores pueden crear nuevos usuarios
+) -> Any:
+    """
+    Create new user (Admins only).
+    """
+    user = db.query(User).filter(User.email == user_in.email).first()
+    if user:
+        raise HTTPException(
+            status_code=400,
+            detail="El email ya está registrado en el sistema.",
+        )
+    
+    db_obj = User(
+        email=user_in.email,
+        hashed_password=security.get_password_hash(user_in.password),
+        full_name=user_in.full_name,
+        role=user_in.role,
+        is_active=user_in.is_active
+    )
+    db.add(db_obj)
+    db.commit()
+    db.refresh(db_obj)
+    return db_obj
+
+@router.post("/setup-initial-admin", response_model=UserResponse)
+def setup_initial_admin(
+    *,
+    db: Session = Depends(get_db),
+    user_in: UserCreate
+) -> Any:
+    """
+    Crea el primer administrador en el sistema si no hay usuarios registrados.
+    """
+    user_exists = db.query(User).first()
+    if user_exists:
+        raise HTTPException(
+            status_code=400,
+            detail="El sistema ya ha sido inicializado. Usa /register para crear más usuarios.",
+        )
+    
+    db_obj = User(
+        email=user_in.email,
+        hashed_password=security.get_password_hash(user_in.password),
+        full_name=user_in.full_name,
+        role=UserRole.ADMIN,  # Siempre admin
+        is_active=True
+    )
+    db.add(db_obj)
+    db.commit()
+    db.refresh(db_obj)
+    return db_obj
+
+
+import uuid
+from datetime import datetime, timedelta
+from app.models.base import UserInvitation
+from app.schemas.user import InvitationCreate, InvitationResponse, InvitedRegister
+
+@router.post("/invitations", response_model=InvitationResponse)
+def create_invitation(
+    *,
+    db: Session = Depends(get_db),
+    inv_in: InvitationCreate,
+    current_user: User = Depends(get_current_user)
+) -> Any:
+    """
+    Genera un token de invitación seguro para registrar a un nuevo usuario (Solo Admin).
+    """
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permisos de administrador para invitar usuarios."
+        )
+
+    # Si ya hay un usuario con ese correo o una invitación activa no usada, advertir
+    existing_user = db.query(User).filter(User.email == inv_in.email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ya existe un usuario registrado con este correo electrónico."
+        )
+
+    # Eliminar invitaciones anteriores no usadas para este mismo email
+    db.query(UserInvitation).filter(UserInvitation.email == inv_in.email, UserInvitation.is_used == False).delete()
+
+    token = str(uuid.uuid4())
+    expires_at = datetime.utcnow() + timedelta(hours=24)
+
+    db_inv = UserInvitation(
+        email=inv_in.email,
+        role=inv_in.role,
+        token=token,
+        expires_at=expires_at,
+        is_used=False
+    )
+    db.add(db_inv)
+    db.commit()
+    db.refresh(db_inv)
+    return db_inv
+
+
+@router.get("/invitations/validate", response_model=InvitationResponse)
+def validate_invitation(
+    *,
+    db: Session = Depends(get_db),
+    token: str
+) -> Any:
+    """
+    Valida si un token de invitación es válido, no ha expirado y no ha sido utilizado.
+    """
+    inv = db.query(UserInvitation).filter(UserInvitation.token == token).first()
+    if not inv:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Token de invitación inválido o inexistente."
+        )
+    if inv.is_used:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Esta invitación ya ha sido utilizada."
+        )
+    if inv.expires_at < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La invitación ha expirado (validez de 24 horas)."
+        )
+    return inv
+
+
+@router.post("/register-invited", response_model=UserResponse)
+def register_invited_user(
+    *,
+    db: Session = Depends(get_db),
+    reg_in: InvitedRegister
+) -> Any:
+    """
+    Registra una cuenta de usuario a partir de un token de invitación válido.
+    """
+    inv = db.query(UserInvitation).filter(UserInvitation.token == reg_in.token).first()
+    if not inv or inv.is_used or inv.expires_at < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invitación inválida, expirada o previamente usada."
+        )
+
+    # Crear el usuario en la base de datos
+    db_user = User(
+        email=inv.email,
+        hashed_password=security.get_password_hash(reg_in.password),
+        full_name=reg_in.full_name,
+        role=inv.role,
+        is_active=True
+    )
+    db.add(db_user)
+    
+    # Marcar invitación como usada
+    inv.is_used = True
+    db.add(inv)
+    
+    db.commit()
+    db.refresh(db_user)
+    
+    return db_user
+

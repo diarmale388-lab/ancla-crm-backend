@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: crm_backend
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+      - ./scratch:/app/scratch
+    environment:
+      - DATABASE_URL=sqlite:///./data/crm.db
+      - PORT=8001
+      - SECRET_KEY=super-secret-key-change-in-production-1234567890
+      - META_VERIFY_TOKEN=antigravity_verify_token_123
+      # Agrega aquí tus otras variables del archivo .env cuando las configures en producción
+      # - META_ACCESS_TOKEN=...
+      # - WHATSAPP_PHONE_NUMBER_ID=...
+      # - WHATSAPP_BUSINESS_ACCOUNT_ID=...
+      # - GEMINI_API_KEY=...
+    restart: always
