@@ -19,6 +19,11 @@ async def lifespan(app: FastAPI):
         Base.metadata.create_all(bind=engine)
         from check_users import inspect_and_seed
         inspect_and_seed()
+        try:
+            from seed_from_backup import seed_data
+            seed_data()
+        except Exception as e_seed:
+            print(f"Advertencia seeding backup: {e_seed}")
     except Exception as e_db:
         print(f"Advertencia en inicio de BD: {e_db}")
     
