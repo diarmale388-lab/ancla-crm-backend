@@ -65,6 +65,10 @@ app.include_router(proposals.router, prefix=settings.API_V1_STR)
 app.include_router(sse.router, prefix=settings.API_V1_STR)
 app.include_router(showroom.router)
 
+# Router dedicado para reconfirmacion de asistentes al Showroom
+from app.routers import showroom_confirm
+app.include_router(showroom_confirm.router, prefix=settings.API_V1_STR)
+
 
 @app.get("/")
 def read_root():
