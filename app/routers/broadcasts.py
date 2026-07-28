@@ -153,23 +153,25 @@ def send_broadcast(
 # ──────────────────────────────────────────────────────────────────────
 
 class ShowroomConfirmRequest(BaseModel):
-    message_text: str = Field(
-        default=(
-            "¡Muy buenos días, {nombre}! ☀️\n\n"
-            "Te habla *Liliana León*, Directora Líder de *Ancla Special Projects*.\n\n"
-            "Es un gusto saludarte. Queremos confirmar tu asistencia a nuestra "
-            "*Gran Inauguración VIP* de nuestro nuevo Showroom y Sala de Ventas en Colombia.\n\n"
-            "📅 *Tu cita*: Hoy, *{dia}* a las *{hora}*\n"
-            "📍 *Ubicación*: Armenia, Quindío — Avenida Centenario, frente a Pan y Miel.\n\n"
-            "Para nosotros es muy importante contar con tu presencia. "
-            "¿Nos confirmas tu asistencia?\n\n"
-            "¡Te esperamos! 🏡✨\n"
-            "_Liliana León — Directora Líder, Ancla Special Projects_"
-        ),
-        description="Texto del mensaje de reconfirmación. Usa {nombre}, {dia}, {hora} como placeholders."
+    message_text: Optional[str] = Field(
+        default=None,
+        description="Texto del mensaje de reconfirmacion. Usa {nombre}, {dia}, {hora} como placeholders. Si se omite, se usa la plantilla oficial."
     )
-    delay_seconds: float = Field(2.0, ge=0.5, le=10.0, description="Delay entre envíos para anti-spam de Meta")
-    target_day: int = Field(28, ge=28, le=29, description="Día objetivo: 28 o 29 de Julio")
+    delay_seconds: float = Field(2.0, ge=0.5, le=10.0, description="Delay entre envios para anti-spam de Meta")
+    target_day: int = Field(28, ge=28, le=29, description="Dia objetivo: 28 o 29 de Julio")
+
+DEFAULT_SHOWROOM_MESSAGE = (
+    "Muy buenos dias, {nombre}!\n\n"
+    "Te habla *Liliana Leon*, Directora Lider de *Ancla Special Projects*.\n\n"
+    "Es un gusto saludarte. Queremos confirmar tu asistencia a nuestra "
+    "*Gran Inauguracion VIP* de nuestro nuevo Showroom y Sala de Ventas en Colombia.\n\n"
+    "*Tu cita*: Hoy, *{dia}* a las *{hora}*\n"
+    "*Ubicacion*: Armenia, Quindio - Avenida Centenario, frente a Pan y Miel.\n\n"
+    "Para nosotros es muy importante contar con tu presencia. "
+    "Nos confirmas tu asistencia?\n\n"
+    "Te esperamos!\n"
+    "_Liliana Leon - Directora Lider, Ancla Special Projects_"
+)
 
 
 async def run_showroom_confirm_task(
@@ -245,7 +247,7 @@ async def run_showroom_confirm_task(
 def send_showroom_confirmation(
     *,
     db: Session = Depends(get_db),
-    payload: ShowroomConfirmRequest = ShowroomConfirmRequest(),
+    payload: ShowroomConfirmRequest,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user)
 ) -> Any:
@@ -261,6 +263,8 @@ def send_showroom_confirmation(
 
     from app.models.base import Appointment, Contact as ContactModel
     from datetime import datetime
+
+    message_text = payload.message_text or DEFAULT_SHOWROOM_MESSAGE
 
     target_start = datetime(2026, 7, payload.target_day, 0, 0, 0)
     target_end = datetime(2026, 7, payload.target_day, 23, 59, 59)
@@ -303,7 +307,7 @@ def send_showroom_confirmation(
     background_tasks.add_task(
         run_showroom_confirm_task,
         attendees,
-        payload.message_text,
+        message_text,
         payload.delay_seconds,
         current_user.id,
         SessionLocal
