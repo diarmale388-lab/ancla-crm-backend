@@ -869,12 +869,12 @@ async def process_whatsapp_message(ctx, payload: dict):
             db.add(contact)
             db.commit()
 
-                handover_msg = (
-                    f"¡Con mucho gusto, {name}! 📲\n\n"
-                    "Hemos notificado directamente a **Liliana León** (Directora Comercial). En un instante tomará la conversación para atenderte de forma personalizada. 🤝✨"
-                )
-                await whatsapp_service.send_text_message(to_phone=from_phone, message_text=handover_msg, db=db)
-                return
+            handover_msg = (
+                f"¡Con mucho gusto, {name}! 📲\n\n"
+                "Hemos notificado directamente a **Liliana León** (Directora Comercial). En un instante tomará la conversación para atenderte de forma personalizada. 🤝✨"
+            )
+            await whatsapp_service.send_text_message(to_phone=from_phone, message_text=handover_msg, db=db)
+            return
 
         # 8. Evaluar Respuestas a Botones de Habeas Data
         if button_reply_id == "habeas_accept":
