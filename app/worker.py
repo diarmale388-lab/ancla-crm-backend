@@ -963,15 +963,18 @@ async def process_whatsapp_message(ctx, payload: dict):
         from app.services.automation import check_message_keywords_trigger
         check_message_keywords_trigger(db, contact, content)
 
-        # 10. Piloto Automático de la Inteligencia Artificial (Sofi) con Debounce de Acumulación (60.0 Segundos)
+        # 10. Piloto Automático de la Inteligencia Artificial (Sofi) con Debounce de Acumulación (2.0 Segundos)
         if contact.chatbot_enabled and msg_type in ["text", "audio", "voice", "interactive", "button", "list_reply", "button_reply"]:
-            # Debounce: Esperar 60.0 segundos para agrupar mensajes consecutivos del mismo cliente
-            await asyncio.sleep(60.0)
+            # Debounce: Esperar 2.0 segundos para agrupar respuestas ultrarrápidas
+            await asyncio.sleep(2.0)
             
-            # Re-verificar si el chatbot sigue activo post-espera (por si fue transferido a humano mientras esperaba)
+            # Re-verificar si el chatbot sigue activo o si está en flujo de agendamiento interactivo
             db.refresh(contact)
             if not contact.chatbot_enabled:
-                logger.info(f"Debounce: Chatbot fue desactivado o transferido a humano durante el tiempo de espera para {contact.phone}.")
+                logger.info(f"Debounce: Chatbot fue desactivado o transferido a humano para {contact.phone}.")
+                return
+            if contact.scheduling_state:
+                logger.info(f"Debounce: Contacto {contact.phone} en proceso de agendamiento interactivo ({contact.scheduling_state}). Cancelando autopiloto de texto de la IA.")
                 return
 
             # Verificar si llegó un mensaje MÁS RECIENTE del mismo contacto
