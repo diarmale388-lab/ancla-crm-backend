@@ -312,175 +312,8 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
     reply_id = (button_reply_id or "").strip()
     name = f"{contact.first_name or ''}".strip() or "Estimado cliente"
 
-    # --- PASO 1: SELECCIÓN DE MODALIDAD (Presencial vs Virtual) ---
-    is_presencial_click = reply_id == "btn_presencial" or "visita presencial" in content_lower or "presencial" in content_lower
-    is_virtual_click = reply_id in ["btn_virt_yes", "btn_virt_info", "btn_virtual", "btn_confirm_tomorrow"] or "asesoria virtual" in content_lower or "asesoría virtual" in content_lower or "virtual" in content_lower
-
-    if is_presencial_click or is_virtual_click:
-        modality = "PRESENCIAL" if is_presencial_click else "VIRTUAL"
-        contact.scheduling_state = f"AWAITING_DAY:{modality}"
-        db.add(contact)
-        db.commit()
-
-        # Generar lista interactiva de días dinámicos (Esta semana y Próxima semana)
-        import datetime as dt_mod
-        now_date = dt_mod.date.today()
-        days_es = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-        months_es = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-
-        this_week_rows = []
-        next_week_rows = []
-
-        for i in range(1, 14):
-            d = now_date + dt_mod.timedelta(days=i)
-            if d.weekday() == 6:  # Omitir Domingos
-                continue
-            day_name = days_es[d.weekday()]
-            month_name = months_es[d.month]
-            title_str = f"{day_name} {d.day} de {month_name}"
-            row_item = {
-                "id": f"day_{d.strftime('%Y-%m-%d')}_{modality}",
-                "title": title_str,
-                "description": f"Cupos disponibles para {modality.lower()}"
-            }
-            if i <= 3:
-                this_week_rows.append(row_item)
-            else:
-                next_week_rows.append(row_item)
-
-        sections = []
-        if this_week_rows:
-            sections.append({"title": "📅 Esta Semana", "rows": this_week_rows[:4]})
-        if next_week_rows:
-            sections.append({"title": "🗓️ Próxima Semana", "rows": next_week_rows[:5]})
-
-        body_txt = (
-            f"¡Con el mayor de los gustos, {name}! 🏠✨\n\n"
-            f"Para tu **{'Visita Presencial en Showroom Armenia' if modality == 'PRESENCIAL' else 'Asesoría Virtual (Google Meet / Zoom)'}**, "
-            "por favor selecciona el día de tu preferencia para consultar los horarios disponibles:"
-        )
-
-        await whatsapp_service.send_interactive_list(
-            to_phone=from_phone,
-            body_text=body_txt,
-            button_text="📅 Seleccionar Día",
-            sections=sections,
-            header_text="ANCLA Special Projects",
-            footer_text="Selecciona un día de la lista",
-            db=db
-        )
-
-        # Registrar resumen en BD para el CRM
-        summary_txt = f"\n\n📱 [Menú Desplegable de Días Enviado ({modality})]"
-        db_msg = Message(
-            contact_id=contact.id,
-            sender_type=SenderType.AI,
-            channel=ChannelType.WHATSAPP,
-            message_type=MessageType.TEXT,
-            content=body_txt + summary_txt,
-            status=MessageStatus.SENT
-        )
-        db.add(db_msg)
-        db.commit()
-        return True
-
-    # --- PASO 2: SELECCIÓN DE DÍA (ej: "Lunes 10 de Agosto" o "day_2026-08-10_PRESENCIAL") ---
-    is_day_selection = reply_id.startswith("day_") or (contact.scheduling_state and contact.scheduling_state.startswith("AWAITING_DAY")) or any(w in content_lower for w in ["lunes", "martes", "miércoles", "miercoles", "jueves", "viernes", "sábado", "sabado"])
-
-    if is_day_selection:
-        date_iso = None
-        modality = "PRESENCIAL"
-        if reply_id.startswith("day_"):
-            parts = reply_id.split("_")
-            if len(parts) >= 2:
-                date_iso = parts[1]
-            if len(parts) >= 3:
-                modality = parts[2]
-        elif contact.scheduling_state and ":" in contact.scheduling_state:
-            modality = contact.scheduling_state.split(":")[1]
-
-        if not date_iso:
-            import datetime as dt_mod
-            now_date = dt_mod.date.today()
-            days_es_lower = ['lunes', 'martes', 'miércoles', 'miercoles', 'jueves', 'viernes', 'sábado', 'sabado', 'domingo']
-            for i in range(1, 15):
-                d = now_date + dt_mod.timedelta(days=i)
-                d_name = days_es_lower[d.weekday()]
-                if d_name in content_lower or str(d.day) in content_lower:
-                    date_iso = d.strftime('%Y-%m-%d')
-                    break
-            if not date_iso:
-                date_iso = (now_date + dt_mod.timedelta(days=5)).strftime('%Y-%m-%d')
-
-        import datetime as dt_mod
-        d_obj = dt_mod.datetime.strptime(date_iso, '%Y-%m-%d').date()
-        days_es = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-        months_es = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-        formatted_day_name = f"{days_es[d_obj.weekday()]} {d_obj.day} de {months_es[d_obj.month]}"
-
-        contact.scheduling_state = f"AWAITING_TIME:{date_iso}:{modality}"
-        db.add(contact)
-        db.commit()
-
-        # Construir Menú de Lista Interactiva con TODAS las horas disponibles (Mañana y Tarde)
-        morning_rows = [
-            {"id": f"time_09:30_{date_iso}_{modality}", "title": "☀️ 09:30 AM", "description": "Turno Mañana"},
-            {"id": f"time_10:00_{date_iso}_{modality}", "title": "☀️ 10:00 AM", "description": "Turno Mañana"},
-            {"id": f"time_10:30_{date_iso}_{modality}", "title": "☀️ 10:30 AM", "description": "Turno Mañana"},
-            {"id": f"time_11:00_{date_iso}_{modality}", "title": "☀️ 11:00 AM", "description": "Turno Mañana"},
-            {"id": f"time_11:30_{date_iso}_{modality}", "title": "☀️ 11:30 AM", "description": "Turno Mañana"},
-        ]
-        afternoon_rows = [
-            {"id": f"time_14:00_{date_iso}_{modality}", "title": "⛅ 02:00 PM", "description": "Turno Tarde"},
-            {"id": f"time_14:30_{date_iso}_{modality}", "title": "⛅ 02:30 PM", "description": "Turno Tarde"},
-            {"id": f"time_15:00_{date_iso}_{modality}", "title": "⛅ 03:00 PM", "description": "Turno Tarde"},
-            {"id": f"time_15:30_{date_iso}_{modality}", "title": "⛅ 03:30 PM", "description": "Turno Tarde"},
-            {"id": f"time_16:00_{date_iso}_{modality}", "title": "⛅ 04:00 PM", "description": "Turno Tarde"},
-        ]
-
-        # Para sábados, solo jornada mañana
-        if d_obj.weekday() == 5:
-            sections = [{"title": "☀️ Mañana (Sábado)", "rows": morning_rows[:4]}]
-        else:
-            sections = [
-                {"title": "☀️ Jornada Mañana", "rows": morning_rows[:4]},
-                {"title": "⛅ Jornada Tarde", "rows": afternoon_rows[:5]}
-            ]
-
-        time_body = (
-            f"¡Perfecto, {name}! 🗓️ Para tu **{'Visita Presencial en Showroom Armenia' if modality == 'PRESENCIAL' else 'Asesoría Virtual'}** "
-            f"el **{formatted_day_name}**, por favor abre el menú a continuación y selecciona la hora de tu preferencia:"
-        )
-
-        await whatsapp_service.send_interactive_list(
-            to_phone=from_phone,
-            body_text=time_body,
-            button_text="⏰ Seleccionar Hora",
-            sections=sections,
-            header_text="ANCLA Special Projects",
-            footer_text="Selecciona tu hora de la lista",
-            db=db
-        )
-
-        list_summary = (
-            f"\n\n📱 [Menú Desplegable de Horas Enviado para {formatted_day_name}]:\n"
-            "  • Mañana: 09:30 AM, 10:00 AM, 10:30 AM, 11:00 AM, 11:30 AM\n"
-            "  • Tarde: 02:00 PM, 02:30 PM, 03:00 PM, 03:30 PM, 04:00 PM"
-        )
-        db_msg = Message(
-            contact_id=contact.id,
-            sender_type=SenderType.AI,
-            channel=ChannelType.WHATSAPP,
-            message_type=MessageType.TEXT,
-            content=time_body + list_summary,
-            status=MessageStatus.SENT
-        )
-        db.add(db_msg)
-        db.commit()
-        return True
-
     # --- PASO 3: SELECCIÓN DE HORA Y CONFIRMACIÓN DE CITA EN BD ---
-    is_time_selection = reply_id.startswith("time_") or reply_id.startswith("btn_time_") or (contact.scheduling_state and contact.scheduling_state.startswith("AWAITING_TIME")) or any(w in content_lower for w in ["am", "pm", "09:30", "10:00", "11:00", "02:00", "03:00", "04:00", "14:00"])
+    is_time_selection = reply_id.startswith("time_") or reply_id.startswith("btn_time_") or (contact.scheduling_state and contact.scheduling_state.startswith("AWAITING_TIME") and not reply_id.startswith("day_"))
 
     if is_time_selection:
         date_iso = None
@@ -608,6 +441,171 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
             pass
 
         return True
+
+    # --- PASO 2: SELECCIÓN DE DÍA (ej: "Lunes 10 de Agosto" o "day_2026-08-10_PRESENCIAL") ---
+    is_day_selection = reply_id.startswith("day_") or (contact.scheduling_state and contact.scheduling_state.startswith("AWAITING_DAY")) or any(w in content_lower for w in ["lunes", "martes", "miércoles", "miercoles", "jueves", "viernes", "sábado", "sabado"])
+
+    if is_day_selection and not reply_id.startswith("time_"):
+        date_iso = None
+        modality = "PRESENCIAL"
+        if reply_id.startswith("day_"):
+            parts = reply_id.split("_")
+            if len(parts) >= 2:
+                date_iso = parts[1]
+            if len(parts) >= 3:
+                modality = parts[2]
+        elif contact.scheduling_state and ":" in contact.scheduling_state:
+            modality = contact.scheduling_state.split(":")[1]
+
+        if not date_iso:
+            import datetime as dt_mod
+            now_date = dt_mod.date.today()
+            days_es_lower = ['lunes', 'martes', 'miércoles', 'miercoles', 'jueves', 'viernes', 'sábado', 'sabado', 'domingo']
+            for i in range(1, 15):
+                d = now_date + dt_mod.timedelta(days=i)
+                d_name = days_es_lower[d.weekday()]
+                if d_name in content_lower or str(d.day) in content_lower:
+                    date_iso = d.strftime('%Y-%m-%d')
+                    break
+            if not date_iso:
+                date_iso = (now_date + dt_mod.timedelta(days=5)).strftime('%Y-%m-%d')
+
+        import datetime as dt_mod
+        d_obj = dt_mod.datetime.strptime(date_iso, '%Y-%m-%d').date()
+        days_es = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+        months_es = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+        formatted_day_name = f"{days_es[d_obj.weekday()]} {d_obj.day} de {months_es[d_obj.month]}"
+
+        contact.scheduling_state = f"AWAITING_TIME:{date_iso}:{modality}"
+        db.add(contact)
+        db.commit()
+
+        # Construir Menú de Lista Interactiva con TODAS las horas disponibles (Mañana y Tarde)
+        morning_rows = [
+            {"id": f"time_09:30_{date_iso}_{modality}", "title": "☀️ 09:30 AM", "description": "Turno Mañana"},
+            {"id": f"time_10:00_{date_iso}_{modality}", "title": "☀️ 10:00 AM", "description": "Turno Mañana"},
+            {"id": f"time_10:30_{date_iso}_{modality}", "title": "☀️ 10:30 AM", "description": "Turno Mañana"},
+            {"id": f"time_11:00_{date_iso}_{modality}", "title": "☀️ 11:00 AM", "description": "Turno Mañana"},
+            {"id": f"time_11:30_{date_iso}_{modality}", "title": "☀️ 11:30 AM", "description": "Turno Mañana"},
+        ]
+        afternoon_rows = [
+            {"id": f"time_14:00_{date_iso}_{modality}", "title": "⛅ 02:00 PM", "description": "Turno Tarde"},
+            {"id": f"time_14:30_{date_iso}_{modality}", "title": "⛅ 02:30 PM", "description": "Turno Tarde"},
+            {"id": f"time_15:00_{date_iso}_{modality}", "title": "⛅ 03:00 PM", "description": "Turno Tarde"},
+            {"id": f"time_15:30_{date_iso}_{modality}", "title": "⛅ 03:30 PM", "description": "Turno Tarde"},
+            {"id": f"time_16:00_{date_iso}_{modality}", "title": "⛅ 04:00 PM", "description": "Turno Tarde"},
+        ]
+
+        if d_obj.weekday() == 5:
+            sections = [{"title": "☀️ Mañana (Sábado)", "rows": morning_rows[:4]}]
+        else:
+            sections = [
+                {"title": "☀️ Jornada Mañana", "rows": morning_rows[:4]},
+                {"title": "⛅ Jornada Tarde", "rows": afternoon_rows[:5]}
+            ]
+
+        time_body = (
+            f"¡Perfecto, {name}! 🗓️ Para tu **{'Visita Presencial en Showroom Armenia' if modality == 'PRESENCIAL' else 'Asesoría Virtual'}** "
+            f"el **{formatted_day_name}**, por favor abre el menú a continuación y selecciona la hora de tu preferencia:"
+        )
+
+        await whatsapp_service.send_interactive_list(
+            to_phone=from_phone,
+            body_text=time_body,
+            button_text="⏰ Seleccionar Hora",
+            sections=sections,
+            header_text="ANCLA Special Projects",
+            footer_text="Selecciona tu hora de la lista",
+            db=db
+        )
+
+        list_summary = (
+            f"\n\n📱 [Menú Desplegable de Horas Enviado para {formatted_day_name}]:\n"
+            "  • Mañana: 09:30 AM, 10:00 AM, 10:30 AM, 11:00 AM, 11:30 AM\n"
+            "  • Tarde: 02:00 PM, 02:30 PM, 03:00 PM, 03:30 PM, 04:00 PM"
+        )
+        db_msg = Message(
+            contact_id=contact.id,
+            sender_type=SenderType.AI,
+            channel=ChannelType.WHATSAPP,
+            message_type=MessageType.TEXT,
+            content=time_body + list_summary,
+            status=MessageStatus.SENT
+        )
+        db.add(db_msg)
+        db.commit()
+        return True
+
+    # --- PASO 1: SELECCIÓN DE MODALIDAD (Presencial vs Virtual) ---
+    if not reply_id.startswith("time_") and not reply_id.startswith("day_"):
+        is_presencial_click = reply_id == "btn_presencial" or "visita presencial" in content_lower
+        is_virtual_click = reply_id in ["btn_virt_yes", "btn_virt_info", "btn_virtual", "btn_confirm_tomorrow"] or "asesoria virtual" in content_lower or "asesoría virtual" in content_lower
+
+        if is_presencial_click or is_virtual_click:
+            modality = "PRESENCIAL" if is_presencial_click else "VIRTUAL"
+            contact.scheduling_state = f"AWAITING_DAY:{modality}"
+            db.add(contact)
+            db.commit()
+
+            import datetime as dt_mod
+            now_date = dt_mod.date.today()
+            days_es = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+            months_es = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+
+            this_week_rows = []
+            next_week_rows = []
+
+            for i in range(1, 14):
+                d = now_date + dt_mod.timedelta(days=i)
+                if d.weekday() == 6:
+                    continue
+                day_name = days_es[d.weekday()]
+                month_name = months_es[d.month]
+                title_str = f"{day_name} {d.day} de {month_name}"
+                row_item = {
+                    "id": f"day_{d.strftime('%Y-%m-%d')}_{modality}",
+                    "title": title_str,
+                    "description": f"Cupos disponibles para {modality.lower()}"
+                }
+                if i <= 3:
+                    this_week_rows.append(row_item)
+                else:
+                    next_week_rows.append(row_item)
+
+            sections = []
+            if this_week_rows:
+                sections.append({"title": "📅 Esta Semana", "rows": this_week_rows[:4]})
+            if next_week_rows:
+                sections.append({"title": "🗓️ Próxima Semana", "rows": next_week_rows[:5]})
+
+            body_txt = (
+                f"¡Con el mayor de los gustos, {name}! 🏠✨\n\n"
+                f"Para tu **{'Visita Presencial en Showroom Armenia' if modality == 'PRESENCIAL' else 'Asesoría Virtual (Google Meet / Zoom)'}**, "
+                "por favor selecciona el día de tu preferencia para consultar los horarios disponibles:"
+            )
+
+            await whatsapp_service.send_interactive_list(
+                to_phone=from_phone,
+                body_text=body_txt,
+                button_text="📅 Seleccionar Día",
+                sections=sections,
+                header_text="ANCLA Special Projects",
+                footer_text="Selecciona un día de la lista",
+                db=db
+            )
+
+            summary_txt = f"\n\n📱 [Menú Desplegable de Días Enviado ({modality})]"
+            db_msg = Message(
+                contact_id=contact.id,
+                sender_type=SenderType.AI,
+                channel=ChannelType.WHATSAPP,
+                message_type=MessageType.TEXT,
+                content=body_txt + summary_txt,
+                status=MessageStatus.SENT
+            )
+            db.add(db_msg)
+            db.commit()
+            return True
 
     return False
 
