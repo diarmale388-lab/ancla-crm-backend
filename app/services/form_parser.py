@@ -42,9 +42,19 @@ def parse_and_update_contact_from_text(contact: Contact, raw_text: str, db: Sess
     Extrae dinámicamente todas las preguntas y respuestas del texto y actualiza el objeto Contact.
     Persiste en qualification_notes un bloque formateado completo con TODA la información entregada por el cliente.
     """
+    # Detección directa de emails en mensajes libres (ej: "Mi correo es patydure@gmail.com para que lo cambies")
+    email_pattern = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', raw_text)
+    if email_pattern:
+        found_email = email_pattern.group().lower()
+        if not contact.email or contact.email != found_email:
+            contact.email = found_email
+            db.add(contact)
+            db.commit()
+            logger.info(f"Correo de Contacto #{contact.id} actualizado automáticamente a: {found_email}")
+
     parsed = parse_form_text_to_dict(raw_text)
     if not parsed:
-        return False
+        return True if email_pattern else False
 
     updated = False
 
