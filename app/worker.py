@@ -350,9 +350,9 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
 
         sections = []
         if this_week_rows:
-            sections.append({"title": "📅 Días de Esta Semana", "rows": this_week_rows[:4]})
+            sections.append({"title": "📅 Esta Semana", "rows": this_week_rows[:4]})
         if next_week_rows:
-            sections.append({"title": "🗓️ Días de la Semana Siguiente", "rows": next_week_rows[:5]})
+            sections.append({"title": "🗓️ Próxima Semana", "rows": next_week_rows[:5]})
 
         body_txt = (
             f"¡Con el mayor de los gustos, {name}! 🏠✨\n\n"
@@ -440,11 +440,11 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
 
         # Para sábados, solo jornada mañana
         if d_obj.weekday() == 5:
-            sections = [{"title": "☀️ Jornada de la Mañana (Sábado)", "rows": morning_rows[:4]}]
+            sections = [{"title": "☀️ Mañana (Sábado)", "rows": morning_rows[:4]}]
         else:
             sections = [
-                {"title": "☀️ Jornada de la Mañana", "rows": morning_rows[:4]},
-                {"title": "⛅ Jornada de la Tarde", "rows": afternoon_rows[:5]}
+                {"title": "☀️ Jornada Mañana", "rows": morning_rows[:4]},
+                {"title": "⛅ Jornada Tarde", "rows": afternoon_rows[:5]}
             ]
 
         time_body = (
