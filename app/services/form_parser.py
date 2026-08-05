@@ -87,6 +87,22 @@ def parse_and_update_contact_from_text(contact: Contact, raw_text: str, db: Sess
                 contact.interest_product = val_str
                 updated = True
 
+        # 6. Presupuesto / Inversión
+        elif any(w in k_lower for w in ["presupuesto", "inversión", "inversion", "rango", "dinero", "valor"]):
+            num_match = re.search(r'\d[\d\.\,]*', val_str.replace('.', '').replace(',', ''))
+            if num_match:
+                try:
+                    contact.estimated_budget = float(num_match.group())
+                    updated = True
+                except Exception:
+                    pass
+
+    # Diagnosticar si es Lead VIP (Tiene terreno propio)
+    if contact.lot_status and any(w in contact.lot_status.lower() for w in ["sí", "si", "tengo", "propio"]):
+        if not contact.qualification_level or contact.qualification_level.lower() not in ["vip", "alto"]:
+            contact.qualification_level = "VIP"
+            updated = True
+
     # Construir bloque formateado visualmente con TODAS las respuestas del formulario
     notes_lines = ["📋 **RESPUESTAS DEL FORMULARIO META ADS**:"]
     for k, v in parsed.items():
