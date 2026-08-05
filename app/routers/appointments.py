@@ -352,3 +352,45 @@ async def delete_appointment(
 
     return {"status": "success", "message": "Cita cancelada exitosamente"}
 
+
+@router.put("/{appointment_id}", response_model=AppointmentResponse)
+async def update_appointment(
+    appointment_id: int,
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Any:
+    """
+    Actualiza la modalidad (PRESENCIAL, VIRTUAL, LLAMADA) u otros datos de una cita comercial.
+    """
+    appointment = db.query(Appointment).filter(Appointment.id == appointment_id).first()
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Cita no encontrada")
+
+    if "appointment_type" in payload:
+        appointment.appointment_type = payload["appointment_type"]
+    if "notes" in payload:
+        appointment.notes = payload["notes"]
+    if "status" in payload:
+        appointment.status = payload["status"]
+
+    db.add(appointment)
+    db.commit()
+    db.refresh(appointment)
+
+    ws_payload = {
+        "event": "appointment_updated",
+        "data": {
+            "id": appointment.id,
+            "contact_id": appointment.contact_id,
+            "appointment_type": appointment.appointment_type,
+            "status": appointment.status
+        }
+    }
+    try:
+        await manager.broadcast(ws_payload)
+    except Exception:
+        pass
+
+    return appointment
+
