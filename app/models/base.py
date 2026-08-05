@@ -120,7 +120,10 @@ class Contact(Base):
     proposed_datetime: Mapped[Optional[dt_module.datetime]] = mapped_column(DateTime, nullable=True)
 
     # Maduración y Calificación Avanzada (ANCLA Special Projects)
-    interest_product: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # Glamping, Flex Home, Frío, Bodegas
+    interest_product: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # Glamping, Flex Home, Living, Llave en Mano
+    lot_status: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # Lote Propio, Buscando Lote
+    lot_city: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # Armenia, Filandia, etc.
+    estimated_budget: Mapped[Optional[float]] = mapped_column(Float, default=0.0, nullable=True) # COP value
     qualification_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True) # VIP, Explorador, Curioso
     qualification_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
@@ -224,6 +227,7 @@ class Appointment(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     datetime: Mapped[dt_module.datetime] = mapped_column(DateTime, nullable=False) # Fecha y hora de la cita
     status: Mapped[str] = mapped_column(String(50), default="CONFIRMED", nullable=False) # PENDING, CONFIRMED, CANCELLED
+    appointment_type: Mapped[Optional[str]] = mapped_column(String(50), default="VIRTUAL", nullable=True) # PRESENCIAL, VIRTUAL, LLAMADA
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[dt_module.datetime] = mapped_column(DateTime, default=dt_module.datetime.utcnow, nullable=False)

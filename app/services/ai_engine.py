@@ -26,6 +26,24 @@ class AIEngine:
             return db_key.value
         return self.api_key
 
+    def get_dynamic_showroom_options(self, is_virtual: bool = False) -> str:
+        if is_virtual:
+            return (
+                "¡Hola! 🏠✨ Gracias por registrarte en ANCLA Special Projects.\n\n"
+                "Hemos recibido tu solicitud para coordinar tu **Asesoría Virtual (Google Meet / Zoom o Llamada Telefónica)**.\n\n"
+                "Disponemos de horarios diurnos de **Lunes a Viernes (10:00 AM - 12:00 PM y 2:00 PM - 4:30 PM)** y **Sábados (10:00 AM - 12:00 PM)**.\n\n"
+                "¿Qué día y jornada te queda más cómodo para agendar tu espacio exclusivo?"
+            )
+            
+        return (
+            "¡Hola! 🏠✨ Gracias por escribir a **ANCLA Special Projects**.\n\n"
+            "Te invitamos a conocer nuestras casas modulares exhibidas (Flex Home y Cápsula Living). Ofrecemos dos modalidades de atención personalizada:\n\n"
+            "1️⃣ **Visita Presencial en Showroom Armenia** (Av. Centenario, frente a Pan y Miel — Lunes a Viernes: 9:30 AM a 12:00 PM y 2:00 PM a 4:00 PM, máx 2 citas por hora).\n"
+            "2️⃣ **Asesoría Virtual / Llamada Comercial** (Ideal si estás en otra ciudad o prefieres llamada de asesoría).\n\n"
+            "📍 **GPS Google Maps**: https://maps.google.com/?q=4.5616751,-75.6455612\n\n"
+            "¿Qué modalidad prefieres para coordinar tu atención?"
+        )
+
     async def generate_copilot_suggestion(self, conversation_history: List[Dict[str, Any]], db: Session = None) -> str:
         """
         Genera una sugerencia de respuesta (Copiloto) basada en los últimos mensajes usando Google Gemini.
@@ -205,9 +223,20 @@ class AIEngine:
         """
         Genera una respuesta autónoma conversacional multi-agente utilizando la orquestación de LangGraph.
         """
-        # --- 0. DETECCIÓN PRIORITARIA Y DEFINITIVA DE CIERRE / DESPEDIDA ---
         low_msg = (last_message or "").lower().strip()
-        goodbye_phrases = ["hasta luego", "hasta pronto", "chao", "adiós", "adios", "nos vemos", "me voy a dormir", "a dormir", "no gracias", "no muchas gracias", "no, gracias", "listo gracias", "ok gracias", "gracias, hasta luego", "gracias por la información", "gracias por la informacion", "gracias, muy amable", "gracias muy amable", "agradezco", "agradecido", "agradecida"]
+
+        # --- 0.A SILENCIO ABSOLUTO EN MODO CO-PILOTO HUMANO ---
+        if not contact.chatbot_enabled:
+            scheduling_keywords = ["agendar", "cita", "reprogramar", "llamar", "llamada", "showroom", "visitar", "visita", "quiero ir"]
+            is_requesting_appointment = any(k in low_msg for k in scheduling_keywords)
+            if not is_requesting_appointment:
+                logger.info(f"Sofi: Chatbot desactivado o en modo co-piloto humano para {contact.phone}. Manteniendo silencio absoluto.")
+                return None
+            else:
+                logger.info(f"Sofi: Cliente en modo humano solicitó agendamiento expreso ({last_message}). Atendiendo solicitud.")
+
+        # --- 0.B DETECCIÓN PRIORITARIA DE CIERRE / DESPEDIDA / CORTESÍA (1 LÍNEA) ---
+        goodbye_phrases = ["hasta luego", "hasta pronto", "chao", "adiós", "adios", "nos vemos", "me voy a dormir", "a dormir", "no gracias", "no muchas gracias", "no, gracias", "listo gracias", "ok gracias", "gracias, hasta luego", "gracias por la información", "gracias por la informacion", "gracias, muy amable", "gracias muy amable", "agradezco", "agradecido", "agradecida", "vale gracias", "ok vale"]
         is_closing = any(p in low_msg for p in goodbye_phrases) or (any(w in low_msg for w in ["gracias", "agradezco", "agradecido", "agradecida"]) and len(low_msg) < 45)
 
         if is_closing:
@@ -226,9 +255,9 @@ class AIEngine:
             if "noche" in low_msg or "dormir" in low_msg or "descans" in low_msg:
                 reply = f"¡Descansa, {c_name}! Buenas noches y dulces sueños. 🌙✨ Quedamos a tu total disposición para cuando desees retomar tu proyecto. ¡Hasta pronto! 🏡🤝"
             else:
-                reply = f"¡Con mucho gusto, {c_name}! Que tengas un excelente día. 🌟 Quedamos muy atentos a tu proyecto para cuando desees continuar. ¡Hasta pronto! 🏡🤝"
+                reply = f"¡Con mucho gusto, {c_name}! Que tengas un excelente día. 🌟 Quedamos 100% atentos a tu proyecto para cuando desees continuar. ¡Hasta pronto! 🏡🤝"
 
-            logger.info(f"Sofi: Cierre de conversación para {contact.phone}. Enviando despedida de cierre única: '{reply}'")
+            logger.info(f"Sofi: Cierre de conversación para {contact.phone}. Enviando despedida ultracorta de cierre: '{reply}'")
             return reply
 
         from langgraph.graph import StateGraph, END
@@ -277,6 +306,20 @@ class AIEngine:
                 db.add(contact)
                 db.commit()
 
+            # SI ES UN FORMULARIO DE META O PRIMER MENSAJE, SIEMPRE OFRECER AMBAS MODALIDADES CON BOTONES
+            if is_form_submission:
+                c_fn = contact.first_name or "cliente"
+                return {
+                    "response": (
+                        f"¡Hola {c_fn}! 🏠✨ Gracias por registrarte en **ANCLA Special Projects**.\n\n"
+                        f"Te invitamos a conocer nuestras casas modulares exhibidas (Flex Home y Cápsula Linvig). Ofrecemos dos modalidades de atención personalizada:\n\n"
+                        f"1️⃣ **Visita Presencial en Showroom Armenia** (Av. Centenario, frente a Pan y Miel — Lunes a Sábado: 10:00 AM a 12:00 PM y 02:00 PM a 04:00 PM, máx 2 citas por hora).\n"
+                        f"2️⃣ **Asesoría Virtual / Llamada Comercial** (Ideal si estás en otra ciudad o prefieres llamada de asesoría).\n\n"
+                        f"📍 **GPS Google Maps**: https://maps.google.com/?q=4.5616751,-75.6455612\n\n"
+                        f"¿Qué modalidad prefieres para coordinar tu atención?"
+                    )
+                }
+
             # PASO 0: DETECCIÓN PRIORITARIA DE INTENCIONES ESPECÍFICAS DE PREGUNTA
             explicit_virtual_phrases = [
                 "puedo virtual", "no puedo presencial", "no estoy en armenia", "estoy en otra ciudad", "estoy fuera", 
@@ -292,36 +335,42 @@ class AIEngine:
                 db.add(contact)
                 db.commit()
 
-            # MANEJO DE FECHAS DINÁMICAS DEL SHOWROOM
-            import datetime
-            today_date = datetime.date.today()
-            if today_date < datetime.date(2026, 7, 28):
-                showroom_dates_str = "Martes 28 y Miércoles 29 de Julio (10:00 AM a 6:00 PM)"
-                showroom_callout = "Gran Inauguración de nuestro Showroom en Armenia"
-            elif today_date == datetime.date(2026, 7, 28):
-                showroom_dates_str = "¡Hoy Martes 28 y mañana Miércoles 29 de Julio! (10:00 AM a 6:00 PM)"
-                showroom_callout = "¡Hoy estamos en nuestro primer día de Gran Inauguración!"
-            elif today_date == datetime.date(2026, 7, 29):
-                showroom_dates_str = "¡Hoy Miércoles 29 de Julio (último día de Inauguración)!"
-                showroom_callout = "¡Hoy es el segundo día de Gran Inauguración de nuestro Showroom!"
+            current_now = datetime.datetime.now()
+            today_date = current_now.date()
+            
+            # Mapeo estricto de días
+            dias_semana = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+            meses_ano = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+            
+            nombre_dia_hoy = dias_semana[today_date.weekday()]
+            nombre_mes_hoy = meses_ano[today_date.month - 1]
+            fecha_hoy_legible = f"{nombre_dia_hoy} {today_date.day} de {nombre_mes_hoy}"
+
+            # Si ya pasaron las 6:00 PM (18:00) del Miércoles 29 o ya estamos a 30 de Julio en adelante
+            is_inauguration_over = (today_date > datetime.date(2026, 7, 29)) or (today_date == datetime.date(2026, 7, 29) and current_now.hour >= 18)
+
+            if not is_inauguration_over:
+                showroom_dates_str = "¡Hoy Miércoles 29 de Julio (Cierre de la Gran Inauguración VIP)!"
+                showroom_callout = "¡Hoy es el último día de Gran Inauguración de nuestro Showroom!"
             else:
-                showroom_dates_str = "Atención permanente: Lunes a Sábado (9:00 AM a 5:00 PM)"
-                showroom_callout = "Showroom permanente de Casas Modulares en Armenia"
+                showroom_dates_str = "Atención permanente post-inauguración: Lunes a Sábado (Jornada Mañana: 10:00 AM a 12:00 PM | Jornada Tarde: 02:00 PM a 04:00 PM — máximo 2 citas por hora)"
+                showroom_callout = "Atención permanente post-inauguración en Showroom Armenia"
 
             gps_links_text = (
                 "📍 **UBICACIÓN Y ENLACES GPS SHOWROOM ARMENIA**\n\n"
                 "🏢 **Dirección**: Armenia, Quindío — Avenida Centenario, frente a Pan y Miel.\n"
                 f"🗓️ **Horario de Atención**: {showroom_dates_str}\n\n"
-                "🚗 **Toca el enlace de tu aplicación preferida para iniciar la ruta:**\n"
-                "🔹 **Waze**: https://waze.com/ul?q=Avenida+Centenario+Armenia+Quindio\n"
-                "🔹 **Google Maps**: https://maps.google.com/?q=Armenia+Avenida+Centenario+Pan+y+Miel"
+                "🚗 **Toca el enlace para iniciar la ruta GPS:**\n"
+                "🔹 **Google Maps Ubicación Oficial**: https://maps.google.com/?q=4.5616751,-75.6455612"
             )
 
-            # COMPROBAR SI YA EXISTE CITA CONFIRMADA ANTES DE PROCESAR FORMULARIO O MENSAJES
+            # COMPROBAR SI YA EXISTE CITA CONFIRMADA FUTURA ANTES DE PROCESAR FORMULARIO O MENSAJES
             from app.models.base import Appointment
+            from datetime import datetime as dt_now
             existing_app = db.query(Appointment).filter(
                 Appointment.contact_id == contact.id,
-                Appointment.status == "CONFIRMED"
+                Appointment.status == "CONFIRMED",
+                Appointment.datetime >= dt_now.utcnow()
             ).order_by(Appointment.created_at.desc()).first()
 
             # MANEJO DIRECTO DE NUEVO FORMULARIO META ADS O MENÚ ABIERTO
@@ -370,7 +419,7 @@ class AIEngine:
                     f"¡Con mucho gusto, {contact.first_name or ''}! ❄️🏗️ En **ANCLA Special Projects** diseñamos y construimos **Cuartos Fríos y Bodegas de Refrigeración Modulares** a la medida de tu negocio o industria:\n\n"
                     f"• **Paneles Aislantes de Alta Eficiencia**: Estructura inyectada en poliuretano (PUR/PIR) de alto grosor para conservación (+4°C) o congelación (-20°C).\n"
                     f"• **Equipos e Instalación Sanitaria**: Unidades condensadoras industriales, puertas herméticas y acabados de fácil limpieza para normas sanitarias.\n\n"
-                    f"Como la potencia frigorífica, dimensiones y compresores se calculan a la medida de tu carga y ubicación, los planos y la cotización técnica te los presenta nuestro **asesor especialista en proyectos modulares e industriales** en tu Asesoría Virtual por llamada o Google Meet a partir del Jueves 30 de Julio.\n\n"
+                    f"Como la potencia frigorífica, dimensiones y compresores se calculan a la medida de tu carga y ubicación, los planos y la cotización técnica te los presenta nuestro **asesor especialista en proyectos modulares e industriales** en tu Asesoría Virtual por llamada o Google Meet.\n\n"
                     f"¿Te gustaría que vayamos agendando tu espacio en la mañana o en la tarde?"
                 )}
 
@@ -435,6 +484,17 @@ class AIEngine:
             msg = state["last_message"]
             msg_lower = msg.lower().strip()
 
+            # FILTRO INTELIGENTE DE AUDIOS ACCIDENTALES / RUIDO DE FONDO NO RELEVANTE
+            if any(w in msg_lower for w in ["[audio]", "[nota de voz]", "audio recibido", "nota de voz recibida"]):
+                booking_keywords = ["cita", "hora", "mañana", "viernes", "lunes", "martes", "miércoles", "jueves", "sábado", "presencial", "virtual", "lote", "precio", "sí", "confirmar", "agendar", "showroom", "10", "11", "12", "2", "3", "4"]
+                if not any(kw in msg_lower for kw in booking_keywords):
+                    logger.info(f"Sofi: Audio/nota de voz accidental ignorada en silencio para {contact.id}")
+                    record_activity(db, contact.id, "audio_filter", f"Sofi: Audio accidental o no relevante omitido en silencio: '{msg}'")
+                    return {
+                        "response": None,
+                        "silent": True
+                    }
+
             # EXTRAER CORREO ELECTRÓNICO Y NOMBRE AUTOMÁTICAMENTE
             import re
             email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', msg)
@@ -473,11 +533,55 @@ class AIEngine:
             is_form_submission = any(w in msg_lower for w in ["completé el formulario", "form_id", "full name:", "podrás asistir presencialmente"])
             has_preferences = not is_form_submission and any(w in msg_lower for w in ["mañana", "tarde", "lunes", "martes", "miercoles", "miércoles", "jueves", "viernes", "28", "29", "10", "11", "12", "1", "2", "3", "4", "5"])
 
-            # SUPERVISOR GUARDRAIL: Si el cliente ya tiene una cita confirmada en BD (y no está enviando un nuevo formulario)
+            # SUPERVISOR GUARDRAIL: Si el cliente ya tiene una cita confirmada FUTURA en BD (y no está enviando un nuevo formulario)
+            from datetime import datetime as dt_now
             existing_app = db.query(Appointment).filter(
                 Appointment.contact_id == contact.id,
-                Appointment.status == "CONFIRMED"
+                Appointment.status == "CONFIRMED",
+                Appointment.datetime >= dt_now.utcnow()
             ).order_by(Appointment.created_at.desc()).first()
+
+            # PRIORIDAD ABSOLUTA #1: SI EL CLIENTE HACE CLIC EN UN BOTÓN DE CONFIRMACIÓN O ENVÍA FRASE DE CONFIRMACIÓN
+            confirm_phrases = ["sí, confirmar", "btn_confirm_slot", "confirmar", "sí, confirmar sábado", "sabado 10 am", "sábado 10 am", "sábado 10", "sabado 10", "10 am"]
+            if any(cp in msg_lower for cp in confirm_phrases):
+                # Si el cliente está respondiendo a una propuesta presencial o virtual para el Sábado o fecha específica
+                target_dt = datetime(2026, 8, 1, 10, 0, 0) if any(w in msg_lower for w in ["sábado", "sabado", "10"]) else (existing_app.datetime if existing_app else datetime(2026, 8, 1, 10, 0, 0))
+                
+                app_obj = db.query(Appointment).filter(Appointment.contact_id == contact.id).order_by(Appointment.created_at.desc()).first()
+                if not app_obj:
+                    app_obj = Appointment(
+                        contact_id=contact.id,
+                        user_id=contact.assigned_user_id or 1,
+                        datetime=target_dt,
+                        status="CONFIRMED",
+                        notes="Cita Confirmada por Botón / Chat"
+                    )
+                    db.add(app_obj)
+                else:
+                    app_obj.datetime = target_dt
+                    app_obj.status = "CONFIRMED"
+                    db.add(app_obj)
+                
+                contact.scheduling_state = "CONFIRMED"
+                db.add(contact)
+                db.commit()
+
+                c_fn = contact.first_name or "estimado/a cliente"
+                date_str = target_dt.strftime("%A %d de %B").title()
+                time_str = target_dt.strftime("%I:%M %p")
+                for en, es in [("Monday","Lunes"),("Tuesday","Martes"),("Wednesday","Miércoles"),("Thursday","Jueves"),("Friday","Viernes"),("Saturday","Sábado"),("Sunday","Domingo"),("August","Agosto"),("July","Julio")]:
+                    date_str = date_str.replace(en, es)
+
+                return {
+                    "response": (
+                        f"¡Excelente, {c_fn}! 👏✨ Tu cita ha quedado **100% REGISTRADA Y CONFIRMADA**.\n\n"
+                        f"🗓️ **Fecha**: {date_str}\n"
+                        f"⏰ **Hora**: {time_str}\n"
+                        f"📍 **Ubicación Showroom**: Armenia, Quindío — Av. Centenario, frente a Pan y Miel.\n"
+                        f"🗺️ **GPS Google Maps**: https://maps.google.com/?q=4.5616751,-75.6455612\n\n"
+                        f"¡Nuestro equipo estará esperándote para brindarte la mejor atención! 🏡🤝"
+                    )
+                }
 
             if existing_app and not is_form_submission:
                 c_name = contact.first_name or "estimado/a cliente"
@@ -486,28 +590,22 @@ class AIEngine:
                 for en, es in [("Monday","Lunes"),("Tuesday","Martes"),("Wednesday","Miércoles"),("Thursday","Jueves"),("Friday","Viernes"),("January","Enero"),("February","Febrero"),("March","Marzo"),("April","Abril"),("May","Mayo"),("June","Junio"),("July","Julio"),("August","Agosto")]:
                     date_str = date_str.replace(en, es)
                 
-                # Si el cliente quiere cambiar, reprogramar su cita o hace clic en el botón de cambiar hora
-                if any(w in msg_lower for w in ["cambiar", "reprogramar", "otra hora", "otro dia", "otro día", "diferente", "no puedo", "cancelar", "btn_change_slot", "btn_no", "btn_time_other"]):
-                    contact.scheduling_state = "AWAITING_CONFIRMATION"
-                    db.add(contact)
-                    db.commit()
+                # Si el cliente desea hablar con Liliana León o presiona el botón directo
+                if any(w in msg_lower for w in ["btn_contact_liliana", "hablar con liliana", "contacto liliana", "directora", "hablar con la jefa"]):
+                    if "[Atención Humana / Liliana León]" not in (contact.qualification_notes or ""):
+                        contact.qualification_notes = f"[Atención Humana / Liliana León]\n{contact.qualification_notes or ''}"
+                        db.add(contact)
+                        db.commit()
                     return {
-                        "response": "¡Con mucho gusto te ayudamos a reprogramar! Contamos también con los siguientes horarios disponibles para tu atención personalizada en el Showroom de Armenia:\n\n• **10:00 AM**\n• **04:00 PM**\n• **05:00 PM**\n\n¿Cuál de estos tres te queda mejor?"
+                        "response": f"¡Con mucho gusto, {c_name}! 📲 Puedes comunicarte o chatear directamente con **Liliana León** (Directora Líder de Ancla Special Projects) al celular **+57 320 287 6282**.\n\n👉 **Haz clic aquí para chatear con ella por WhatsApp**: https://wa.me/573202876282\n\n¡Ella y nuestro equipo estarán encantados de atenderte personalmente! 🏠✨"
                     }
 
                 # Si el cliente está enviando una frase de cortesía, despedida o confirmación explícita
-                courtesy_phrases = ["nos vemos", "hasta el", "gracias", "listo", "de acuerdo", "perfecto", "allá estaré", "alla nos vemos", "nos vemos el martes", "chao", "ok", "sí, confirmar", "btn_confirm_slot", "btn_yes"]
+                courtesy_phrases = ["nos vemos", "hasta el", "gracias", "listo", "de acuerdo", "perfecto", "allá estaré", "alla nos vemos", "nos vemos el martes", "chao", "ok", "sí, confirmar", "btn_confirm_slot", "btn_yes", "btn_confirm_today"]
                 if any(cp in msg_lower for cp in courtesy_phrases):
-                    explicit_virtual_phrases = ["puedo virtual", "no puedo presencial", "no estoy en armenia", "estoy en otra ciudad", "estoy fuera", "atención virtual", "asesoría virtual", "modo virtual", "asesoria virtual", "otra región", "otra region", "boyaca", "paipa", "bogota", "medellin", "cali"]
-                    is_virt = (contact.qualification_notes and "[LISTA_ESPERA_VIP]" in contact.qualification_notes) or any(w in msg_lower for w in explicit_virtual_phrases)
-                    if is_virt:
-                        return {
-                            "response": f"¡Excelente, {c_name}! 👋 Te confirmamos que tu solicitud de **Atención Virtual / Llamada** ha sido registrada con prioridad en nuestra **Lista de Espera VIP**.\n\nDebido a la Gran Inauguración de nuestro Showroom en Armenia, los cupos virtuales de esta semana se encuentran a **capacidad máxima (100% agotados)**.\n\n🗓️ El día **Jueves 30 de Julio** nuestro **asesor especialista en proyectos modulares** se comunicará directamente contigo para coordinar la hora exacta de tu asesoría virtual para la próxima semana.\n\n¡Muchas gracias por tu interés y comprensión! 🏡🤝"
-                        }
-                    else:
-                        return {
-                            "response": f"¡Excelente, {c_name}! Quedamos 100% agendados y confirmados. 👍✨ ¡Te esperamos el {date_str} a las {time_str} en nuestro Showroom de Armenia! Que tengas un excelente día. 🏡🤝"
-                        }
+                    return {
+                        "response": f"¡Excelente, {c_name}! Quedamos 100% agendados y confirmados. 👍✨ ¡Te esperamos el {date_str} a las {time_str} en nuestro Showroom de Armenia! Que tengas un excelente día. 🏡🤝"
+                    }
                 elif any(w in msg_lower.split() for w in ["hola", "buenos", "buenas", "que tal", "saludos"]):
                     return {
                         "response": f"¡Hola de nuevo, {c_name}! 👋 Te recuerdo que tu cita está confirmada para el {date_str} a las {time_str}. ¿Hay alguna duda adicional en la que te pueda ayudar hoy?"
@@ -538,13 +636,29 @@ class AIEngine:
             explicit_virtual_phrases = ["puedo virtual", "no puedo presencial", "no estoy en armenia", "estoy en otra ciudad", "estoy fuera", "atención virtual", "asesoría virtual", "modo virtual", "asesoria virtual", "otra región", "otra region", "boyaca", "paipa", "bogota", "medellin", "cali", "boyacá"]
             is_virtual_lead = (contact.qualification_notes and "[LISTA_ESPERA_VIP]" in contact.qualification_notes) or any(w in msg_lower for w in explicit_virtual_phrases)
 
-            if is_virtual_lead and "[LISTA_ESPERA_VIP]" not in (contact.qualification_notes or ""):
-                contact.qualification_notes = f"[LISTA_ESPERA_VIP] [ATENCION_VIRTUAL]\n{contact.qualification_notes or ''}"
-                db.add(contact)
-                db.commit()
+            # DETECCIÓN EXPLÍCITA DE SELECCIÓN DE MODALIDAD DESDE BOTONES INTERACTIVOS
+            if any(w in msg_lower for w in ["btn_mode_presencial", "btn_mode_presencial_org", "btn_mode_presencial_arm", "btn_mode_presencial_per", "visita presencial", "presencial"]):
+                return {
+                    "response": (
+                        f"¡Excelente elección, {c_name}! 🏠✨ Te esperamos en nuestro Showroom de Armenia (Av. Centenario, frente a Pan y Miel).\n\n"
+                        f"📍 **GPS Google Maps**: https://maps.google.com/?q=4.5616751,-75.6455612\n\n"
+                        f"Contamos con los siguientes turnos de atención presencial de Lunes a Sábado (máximo 2 citas por hora para brindarte atención personalizada):\n\n"
+                        f"• **Jornada Mañana**: 10:00 AM a 01:00 PM (10:00 AM, 11:00 AM, 12:00 PM)\n"
+                        f"• **Jornada Tarde**: 02:00 PM a 05:00 PM (02:00 PM, 03:00 PM, 04:00 PM)\n\n"
+                        f"¿Qué día y hora de estos te queda mejor para reservar tu cupo exclusivo?"
+                    )
+                }
 
-            # REGLA OBLIGATORIA DE CAPACIDAD MÁXIMA EN ATENCIÓN VIRTUAL PARA ESTA SEMANA
-            if is_virtual_lead or any(w in msg_lower for w in ["btn_virt_yes", "agendar virtual", "asesoría virtual", "asesoria virtual", "llamada virtual", "puedo virtual", "virtual"]):
+            if any(w in msg_lower for w in ["btn_mode_virtual", "btn_mode_virtual_org", "btn_mode_virtual_arm", "btn_mode_virtual_per", "asesoría virtual", "asesoria virtual", "llamada virtual", "modalidad virtual"]):
+                return {
+                    "response": (
+                        f"¡Con mucho gusto, {c_name}! 📞✨ Te registramos para tu **Asesoría Virtual / Llamada Comercial** con un especialista en proyectos modulares.\n\n"
+                        f"Para coordinar tu llamada personalizada (10 a 15 minutos), contamos con disponibilidad de Lunes a Sábado:\n\n"
+                        f"• **Jornada Mañana**: 10:00 AM a 01:00 PM (10:00 AM, 11:00 AM, 12:00 PM)\n"
+                        f"• **Jornada Tarde**: 02:00 PM a 05:00 PM (02:00 PM, 03:00 PM, 04:00 PM)\n\n"
+                        f"¿Qué día y hora prefieres que te llamemos a este número?"
+                    )
+                }
                 contact.scheduling_state = None
                 db.add(contact)
                 db.commit()
@@ -594,13 +708,14 @@ class AIEngine:
                     f"¿Te gustaría que vayamos agendando tu espacio en la mañana o en la tarde?"
                 )}
 
-            if not is_form_submission and not (contact.qualification_notes and "[SHOWROOM_PRESENCIAL]" in contact.qualification_notes) and any(w in msg_lower for w in ["btn_virt_info", "btn_virt_cat", "ver catálogo", "catalogo antes", "ver catalogo", "más información", "mas informacion", "información de los modelos", "informacion de los modelos"]):
+            if any(w in msg_lower for w in ["btn_virt_info", "btn_virt_cat", "ver catálogo", "catalogo antes", "ver catalogo", "más información", "mas informacion", "quiero información", "quiero informacion", "información", "informacion", "información de los modelos", "informacion de los modelos"]):
+                opts_text = self.get_dynamic_showroom_options(is_virtual_lead)
                 return {"response": (
                     f"¡Con mucho gusto, {contact.first_name or ''}! 🏠✨ Te compartimos la información de nuestros modelos principales:\n\n"
                     f"• **FLEX HOME (56m²)**: Casa modular expandible con 2 habitaciones, sala-comedor, cocineta y baño completo.\n"
                     f"• **CÁPSULA LINVIG (13m²)**: Suite premium con 1 habitación y 1 baño completo, ideal para espacios independientes o proyectos turísticos.\n\n"
-                    f"Ambas estructuras cuentan con aislamiento termoacústico de alto confort. Como cada proyecto se cotiza a la medida de tu terreno y ubicación, los detalles en fotos, planos y presupuesto exacto te los presenta nuestro **asesor especialista en proyectos modulares** en tu Asesoría Virtual por llamada o Google Meet a partir del Jueves 30 de Julio.\n\n"
-                    f"¿Te gustaría que vayamos agendando tu espacio en la mañana o en la tarde?"
+                    f"Ambas estructuras cuentan con aislamiento termoacústico de alto confort.\n\n"
+                    f"{opts_text}"
                 )}
 
             # Detección explícita de solicitud de información para asistir / ubicación / fechas
@@ -1505,10 +1620,9 @@ class AIEngine:
         msg = last_message.lower()
         
         # 1. Saludo y respuestas a dudas técnicas del catálogo de ANCLA
+        opts_text = self.get_dynamic_showroom_options(is_vip)
         if "precio" in msg or "cuesta" in msg or "valor" in msg or "cotiz" in msg:
-            if is_vip:
-                return f"¡Hola {name}! Como cada solución modular se personaliza a tu medida, los valores exactos y planos se presentan en una breve Asesoría Virtual de 10 minutos por llamada o Google Meet. Has quedado registrado en nuestra Lista de Espera VIP a partir del Jueves 30 de Julio. ¿Te gustaría ir agendando tu hora?"
-            return f"¡Hola {name}! Como todas nuestras soluciones modulares (Flex Home y Cápsula Linvig) se configuran a la medida de tu proyecto, los valores exactos y promociones de feria se entregan en nuestra Gran Inauguración en Armenia este 28 y 29 de Julio. ¿Qué día prefieres visitarnos, el Martes 28 o el Miércoles 29 de Julio?"
+            return f"¡Hola {name}! Como todas nuestras soluciones modulares (Flex Home y Cápsula Linvig) se configuran a la medida de tu proyecto, los valores exactos y planos te los presentamos detalladamente. {opts_text}"
             
         elif "baño" in msg or "baño completo" in msg or "ducha" in msg or "inodoro" in msg:
             return f"¡Hola {name}! Sí, la Capsula Linvig y la FLEX HOME vienen equipadas con un baño 100% completo y listo para habitar: incluye lavamanos con mueble, espejo, ducha con mampara corrediza en vidrio templado, inodoro y grifería de alta calidad."
@@ -1528,14 +1642,10 @@ class AIEngine:
             return f"¡Hola {name}! La FLEX HOME tiene unas dimensiones de 6.28 m de ancho, 5.70 m de largo y una altura de 2.90 m, cubriendo 56 m² en su distribución expandida."
 
         elif "plano" in msg or "planos" in msg:
-            if is_vip:
-                return f"¡Hola {name}! Sí, contamos con los planos detallados de cada casa modular. Para presentártelos y explicarte la distribución, te invitamos a agendar tu Asesoría Virtual por llamada o Meet a partir del Jueves 30 de Julio. ¿Te gustaría que vayamos reservando tu espacio?"
-            return f"¡Hola {name}! Sí, contamos con los planos detallados de distribución interior. Puedes conocerlos en vivo y ver los módulos reales en nuestra Gran Inauguración en Armenia este Martes 28 y Miércoles 29 de Julio. ¿Qué día prefieres asistir para recibir atención personalizada?"
+            return f"¡Hola {name}! Sí, contamos con los planos detallados de distribución interior. {opts_text}"
 
         # Fallback genérico de saludo técnico adaptado a Showroom presencial o virtual
-        if is_vip:
-            return f"¡Hola {name}! Gracias por escribir a ANCLA Special Projects. 🏡✨ Recuerda que estás registrado en nuestra **Lista de Espera VIP** para atención virtual a partir del Jueves 30 de Julio. ¿Te gustaría que vayamos agendando tu Asesoría Virtual (Llamada 📞 / Google Meet 💻) para presentarte nuestros modelos?"
-        return f"¡Hola {name}! Gracias por escribir a ANCLA Special Projects. 🏠✨ Te invitamos a conocer nuestras casas modulares en la Gran Inauguración de nuestro Showroom en Armenia (Avenida Centenario, frente a Pan y Miel). ¿Qué día prefieres visitarnos, el **Martes 28** o el **Miércoles 29 de Julio**?"
+        return f"¡Hola {name}! Gracias por escribir a ANCLA Special Projects. 🏠✨ {opts_text}"
 
     def _heuristic_ad_copy(self, product_description: str, tone: str) -> Dict[str, Any]:
         return {

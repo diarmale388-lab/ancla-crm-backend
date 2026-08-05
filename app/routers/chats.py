@@ -23,18 +23,37 @@ def get_contacts_with_last_message(
 ) -> Any:
     """
     Recupera los contactos asignados al asesor actual (o todos si es administrador),
-    incluyendo el contenido y fecha de su último mensaje.
+    incluyendo el contenido y fecha de su último mensaje de forma optimizada.
     """
+    from datetime import datetime
+    from sqlalchemy import func, desc
+    
     # Todos los usuarios activos ven la lista completa de contactos
     contacts = db.query(Contact).all()
+    if not contacts:
+        return []
+        
+    # OPTIMIZACIÓN N+1: Obtener el último mensaje de cada contacto en un solo viaje
+    # Subconsulta para encontrar el ID del mensaje más reciente de cada contact_id
+    subquery = db.query(
+        Message.contact_id,
+        func.max(Message.id).label("max_id")
+    ).group_by(Message.contact_id).subquery()
+    
+    # Consulta principal para obtener los objetos Message completos asociados a esos IDs
+    last_messages_list = db.query(Message).join(
+        subquery,
+        Message.id == subquery.c.max_id
+    ).all()
+    
+    # Crear diccionario O(1) de mapeo
+    last_msg_dict = {msg.contact_id: msg for msg in last_messages_list}
+    
     results = []
     
     for contact in contacts:
-        # Obtener el último mensaje
-        last_msg = db.query(Message)\
-            .filter(Message.contact_id == contact.id)\
-            .order_by(desc(Message.created_at))\
-            .first()
+        # Recuperación en memoria O(1)
+        last_msg = last_msg_dict.get(contact.id)
             
         results.append({
             "id": contact.id,
@@ -56,7 +75,7 @@ def get_contacts_with_last_message(
         })
         
     # Ordenar por fecha de último mensaje descendente (los chats más recientes arriba)
-    results.sort(key=lambda x: x["last_message_time"] or contact.created_at, reverse=True)
+    results.sort(key=lambda x: x["last_message_time"] or datetime.min, reverse=True)
     return results
 
 
@@ -106,19 +125,7 @@ async def send_message_to_contact(
     """
     contact = db.query(Contact).filter(Contact.id == contact_id).first()
     if not contact:
-        contact = Contact(
-            id=contact_id,
-            first_name="Diego",
-            last_name="Machado Leon",
-            phone="573177001670",
-            source="WhatsApp"
-        )
-        db.add(contact)
-        db.commit()
-        db.refresh(contact)
-
-    # Permitir visibilidad y envío a todos los asesores y administradores activos
-    pass
+        raise HTTPException(status_code=404, detail="Contacto no encontrado")
 
     # Identificar canal según el origen del contacto
     # Por defecto, si el teléfono tiene "IG-", es Instagram, sino WhatsApp
@@ -366,9 +373,10 @@ async def send_media_to_contact_media(
     return db_msg
 
 
-@router.patch("/{contact_id}/toggle-chatbot", response_model=ContactChatResponse)
+@router.patch("/{contact_id}/toggle-chatbot")
 async def toggle_chatbot(
     contact_id: int,
+    payload: dict = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Any:
@@ -379,13 +387,11 @@ async def toggle_chatbot(
     if not contact:
         raise HTTPException(status_code=404, detail="Contacto no encontrado")
 
-    if current_user.role != "admin" and contact.assigned_user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes permiso para modificar este contacto."
-        )
+    if payload and "chatbot_enabled" in payload:
+        contact.chatbot_enabled = bool(payload["chatbot_enabled"])
+    else:
+        contact.chatbot_enabled = not contact.chatbot_enabled
 
-    contact.chatbot_enabled = not contact.chatbot_enabled
     db.add(contact)
     db.commit()
     db.refresh(contact)
@@ -1121,6 +1127,7 @@ async def chat_websocket_endpoint(
     """
     Endpoint WebSocket de producción con autenticación JWT y latido (Ping/Pong).
     """
+    from app.config import settings
     from jose import jwt, JWTError
     user_id = None
     try:

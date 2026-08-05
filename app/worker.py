@@ -329,6 +329,7 @@ async def process_whatsapp_message(ctx, payload: dict):
         exists = db.query(Message).filter(Message.external_message_id == external_msg_id).first()
         if exists:
             logger.info(f"Mensaje duplicado de WhatsApp omitido en worker: {external_msg_id}")
+            db.close()
             return
 
         msg_type = msg.get("type", "text")
@@ -411,14 +412,8 @@ async def process_whatsapp_message(ctx, payload: dict):
             db.refresh(contact)
             is_new = True
         else:
-            # Garantizar que Piloto IA permanezca activo a menos que haya pedido un humano
-            if not contact.chatbot_enabled:
-                msg_lower_check = (content or "").lower()
-                human_requests = ["hablar con humano", "asesor humano", "persona real", "/humano"]
-                if not any(h in msg_lower_check for h in human_requests):
-                    contact.chatbot_enabled = True
-                    db.add(contact)
-                    db.commit()
+            # Respetar el estado de chatbot_enabled configurado en la BD / transferencia a humano
+            pass
 
         # 3. Procesar Atribución de Meta Ads
         referral = msg.get("referral")
@@ -426,6 +421,14 @@ async def process_whatsapp_message(ctx, payload: dict):
             process_meta_ads_attribution(msg, contact, content, db)
             db.add(contact)
             db.commit()
+
+        # 3.b Parsear Respuestas de Formulario Meta Ads si vienen en el texto del mensaje
+        if content and (":" in content or "formulario" in content.lower()):
+            try:
+                from app.services.form_parser import parse_and_update_contact_from_text
+                parse_and_update_contact_from_text(contact, content, db)
+            except Exception as form_err:
+                logger.error(f"Error parseando respuestas del formulario en mensaje: {form_err}")
 
         # 4. Asignación de lead por Round Robin si es nuevo
         if is_new or contact.assigned_user_id is None:
@@ -538,7 +541,157 @@ async def process_whatsapp_message(ctx, payload: dict):
             )
             return
 
-        # 7. Evaluar Respuestas a Botones de Habeas Data
+        # 7. Evaluar Respuestas a Botones de Confirmación Showroom
+        if button_reply_id in ["btn_confirm_today", "btn_confirm_tomorrow", "btn_no_attend", "btn_presencial"] or "visita presencial" in content.lower() or "presencial" in content.lower():
+            from app.models.base import Appointment, LeadActivityLog
+            # Buscar cita activa
+            appt = db.query(Appointment).filter(
+                Appointment.contact_id == contact.id,
+                Appointment.status == "CONFIRMED"
+            ).order_by(Appointment.datetime.desc()).first()
+
+            name = f"{contact.first_name or ''}".strip() or "Estimado cliente"
+
+            if button_reply_id in ["btn_confirm_today", "btn_presencial"] or "visita presencial" in content.lower() or "presencial" in content.lower():
+                logger.info(f"Usuario {from_phone} confirmó asistencia para hoy.")
+                if appt:
+                    appt.status = "CONFIRMED"
+                    db.add(appt)
+                
+                act = LeadActivityLog(
+                    contact_id=contact.id,
+                    activity_type="appointment_confirmed_today",
+                    description="El usuario confirmó por WhatsApp interactivo su asistencia presencial para hoy."
+                )
+                db.add(act)
+                db.commit()
+
+                confirm_msg = (
+                    f"¡Excelente, {name}! Te confirmamos que tu reserva VIP está 100% activa. 👍✨\n\n"
+                    "📍 *Aquí tienes la ubicación para llegar fácil*:\n"
+                    "🏢 Armenia, Quindío — Avenida Centenario, frente a Pan y Miel.\n\n"
+                    "🚗 *Toca el enlace de tu aplicación preferida para iniciar la ruta*:\n"
+                    "🔹 *Google Maps*: https://maps.google.com/?q=Armenia+Avenida+Centenario+Pan+y+Miel\n"
+                    "🔹 *Waze*: https://waze.com/ul?q=Avenida+Centenario+Armenia+Quindio\n\n"
+                    "¡Nos vemos en un rato! 🏡✨"
+                )
+                await whatsapp_service.send_text_message(
+                    to_phone=from_phone,
+                    message_text=confirm_msg,
+                    db=db
+                )
+
+                db_reply = Message(
+                    contact_id=contact.id,
+                    sender_type=SenderType.AI,
+                    channel=ChannelType.WHATSAPP,
+                    message_type=MessageType.TEXT,
+                    content=confirm_msg,
+                    status=MessageStatus.SENT
+                )
+                db.add(db_reply)
+                db.commit()
+                return
+
+            elif button_reply_id in ["btn_confirm_tomorrow", "btn_virt_yes", "btn_virt_info"] or "asesoria virtual" in content.lower() or "virtual" in content.lower():
+                logger.info(f"Usuario {from_phone} solicitó agendamiento de Asesoría Virtual / Llamada.")
+                
+                reprog_msg = (
+                    f"¡Con el mayor de los gustos, {name}! 💻✨ Para tu **Asesoría Virtual (Google Meet / Zoom)**, "
+                    "por favor selecciona la hora de tu preferencia para separar tu espacio exclusivo:"
+                )
+                buttons_slot = [
+                    {"id": "btn_time_1000", "title": "☀️ 10:00 AM"},
+                    {"id": "btn_time_1100", "title": "☀️ 11:00 AM"},
+                    {"id": "btn_time_1400", "title": "⛅ 02:00 PM"}
+                ]
+                await whatsapp_service.send_interactive_buttons(
+                    to_phone=from_phone,
+                    body_text=reprog_msg,
+                    buttons=buttons_slot,
+                    header_text="ANCLA Special Projects",
+                    footer_text="Selecciona tu hora preferida",
+                    db=db
+                )
+
+                # Guardar en BD con resumen visual de botones para el CRM
+                btn_summary = "\n\n🔘 [Botones Táctiles Enviados]:\n  1️⃣ ☀️ 10:00 AM\n  2️⃣ ☀️ 11:00 AM\n  3️⃣ ⛅ 02:00 PM"
+                db_reply = Message(
+                    contact_id=contact.id,
+                    sender_type=SenderType.AI,
+                    channel=ChannelType.WHATSAPP,
+                    message_type=MessageType.TEXT,
+                    content=reprog_msg + btn_summary,
+                    status=MessageStatus.SENT
+                )
+                db.add(db_reply)
+                db.commit()
+                return
+
+            elif button_reply_id == "btn_no_attend":
+                logger.info(f"Usuario {from_phone} canceló asistencia.")
+                if appt:
+                    appt.status = "CANCELLED"
+                    db.add(appt)
+                
+                act = LeadActivityLog(
+                    contact_id=contact.id,
+                    activity_type="appointment_cancelled_by_user",
+                    description="El usuario canceló por WhatsApp interactivo su asistencia presencial."
+                )
+                db.add(act)
+                db.commit()
+
+                cancel_msg = (
+                    f"Muchas gracias por avisarnos, {name}. Entendemos perfectamente que surgen imprevistos. 🌟\n\n"
+                    "Más adelante, si así lo deseas, podemos coordinar una breve *Asesoría Virtual* por llamada o Google Meet para presentarte el catálogo de casas modulares. ¡Que tengas un excelente día! 🏡🤝"
+                )
+                await whatsapp_service.send_text_message(
+                    to_phone=from_phone,
+                    message_text=cancel_msg,
+                    db=db
+                )
+
+                db_reply = Message(
+                    contact_id=contact.id,
+                    sender_type=SenderType.AI,
+                    channel=ChannelType.WHATSAPP,
+                    message_type=MessageType.TEXT,
+                    content=cancel_msg,
+                    status=MessageStatus.SENT
+                )
+                db.add(db_reply)
+                db.commit()
+                return
+
+        # 7.5 Evaluar Botones Interactivos de Campaña Nacional y Atención Humana
+        if button_reply_id in ["btn_virt_yes", "btn_virt_info", "btn_contact_liliana"]:
+            name = f"{contact.first_name or ''}".strip() or "Estimado cliente"
+
+            if button_reply_id == "btn_virt_yes":
+                logger.info(f"Usuario {from_phone} solicitó agendamiento de Cita Virtual.")
+                virt_msg = (
+                    f"¡Excelente elección, {name}! 💻✨\n\n"
+                    "Coordinemos tu *Asesoría Virtual Personalizada* por llamada o videollamada por Google Meet / Zoom.\n\n"
+                    "Por favor indícanos qué día y horario (mañana o tarde) te queda mejor, y uno de nuestros directores comerciales te compartirá el enlace exclusivo. 📲🏡"
+                )
+                await whatsapp_service.send_text_message(to_phone=from_phone, message_text=virt_msg, db=db)
+                return
+
+            elif button_reply_id == "btn_contact_liliana":
+                logger.info(f"Usuario {from_phone} solicitó atención directa con Liliana. Pausando bot.")
+                contact.chatbot_enabled = False  # Handover a humano
+                db.add(contact)
+                db.commit()
+
+                handover_msg = (
+                    f"¡Con mucho gusto, {name}! 📲\n\n"
+                    "Hemos notificado directamente a **Liliana León** (Directora Comercial). En un instante tomará la conversación para atenderte de forma personalizada. 🤝✨"
+                )
+                await whatsapp_service.send_text_message(to_phone=from_phone, message_text=handover_msg, db=db)
+                return
+
+        # 8. Evaluar Respuestas a Botones de Habeas Data
         if button_reply_id == "habeas_accept":
             logger.info(f"Usuario {from_phone} aceptó Habeas Data.")
             contact.habeas_data_authorized = True
@@ -618,7 +771,6 @@ async def process_whatsapp_message(ctx, payload: dict):
 
         # 8. Consentimiento de datos (Bypassed por solicitud explícita del cliente)
         contact.habeas_data_authorized = True
-        contact.chatbot_enabled = True
         db.add(contact)
         db.commit()
 
@@ -631,6 +783,12 @@ async def process_whatsapp_message(ctx, payload: dict):
             # Debounce: Esperar 60.0 segundos para agrupar mensajes consecutivos del mismo cliente
             await asyncio.sleep(60.0)
             
+            # Re-verificar si el chatbot sigue activo post-espera (por si fue transferido a humano mientras esperaba)
+            db.refresh(contact)
+            if not contact.chatbot_enabled:
+                logger.info(f"Debounce: Chatbot fue desactivado o transferido a humano durante el tiempo de espera para {contact.phone}.")
+                return
+
             # Verificar si llegó un mensaje MÁS RECIENTE del mismo contacto
             newer_msg = db.query(Message).filter(
                 Message.contact_id == contact.id,
@@ -685,54 +843,91 @@ async def process_whatsapp_message(ctx, payload: dict):
 
                 # Enviar a la API de WhatsApp de Meta (con envío automático de botones interactivos para propuestas)
                 try:
-                    is_initial_greeting = any(w in ai_reply.lower() for w in ["showroom presencial", "fechas de exhibición", "cupo de visita presencial", "selecciona el día de tu preferencia", "gracias por registrarte a la gran inauguración", "selecciona el día que prefieres visitarnos"])
-                    is_time_selection = "para tu atención presencial el" in ai_reply.lower() or "selecciona la hora de tu preferencia" in ai_reply.lower()
-                    is_secondary_hours = "contamos también con los siguientes horarios" in ai_reply.lower() or "cuál de estos tres te queda mejor" in ai_reply.lower()
-                    is_proposal = (contact.scheduling_state == "AWAITING_CONFIRMATION") or any(w in ai_reply.lower() for w in ["¿te queda bien", "¿te viene bien", "horario para agendar", "confirmar tu asistencia", "coordinemos una llamada", "llamada informativa", "te agendamos tu cupo"])
+                    is_mode_selection = any(w in ai_reply.lower() for w in ["qué modalidad prefieres", "dos modalidades de atención", "visita presencial", "asesoría virtual"])
+                    is_day_selection = any(w in ai_reply.lower() for w in ["selecciona en el menú de abajo el día", "qué día y hora de estos te queda mejor", "turnos de atención presencial"])
+                    is_time_selection = "elige la hora de tu preferencia" in ai_reply.lower() or "jornada mañana" in ai_reply.lower()
+                    is_proposal = (contact.scheduling_state == "AWAITING_CONFIRMATION") or any(w in ai_reply.lower() for w in ["¿te queda bien", "¿te viene bien", "horario para agendar", "confirmar tu asistencia", "coordinemos una llamada", "llamada informativa"])
                     
-                    if (is_proposal or is_time_selection or is_secondary_hours) and not contact.scheduling_state:
+                    if (is_proposal or is_day_selection or is_time_selection) and not contact.scheduling_state:
                         contact.scheduling_state = "AWAITING_CONFIRMATION"
                         db.add(contact)
                         db.commit()
                     
-                    if is_secondary_hours or is_time_selection:
+                    if is_day_selection:
+                        # Generar opciones dinámicas para los próximos días hábilmente
+                        from datetime import datetime, timedelta
+                        today = datetime.now()
+                        rows_week = []
+                        day_names_es = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo"}
+                        month_names_es = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"}
+
+                        for step in range(1, 6):
+                            future_day = today + timedelta(days=step)
+                            if future_day.weekday() == 6:
+                                continue # Omitir domingos
+                            d_name = day_names_es[future_day.weekday()]
+                            m_name = month_names_es[future_day.month]
+                            d_str = f"{d_name} {future_day.day} de {m_name}"
+                            rows_week.append({
+                                "id": f"btn_day_{future_day.strftime('%Y%m%d')}",
+                                "title": d_str[:24],
+                                "description": "Atención Showroom Armenia / Virtual"
+                            })
+
                         sections = [
                             {
-                                "title": "Horarios de la Mañana",
+                                "title": "Selecciona tu Día",
+                                "rows": rows_week[:5]
+                            }
+                        ]
+                        await whatsapp_service.send_interactive_list(
+                            to_phone=contact.phone,
+                            header_text="ANCLA Special Projects",
+                            body_text=ai_reply,
+                            button_text="📅 Seleccionar Día",
+                            sections=sections,
+                            footer_text="Máximo 2 citas por hora",
+                            db=db
+                        )
+                    elif is_time_selection:
+                        sections = [
+                            {
+                                "title": "Jornada Mañana",
                                 "rows": [
-                                    {"id": "btn_time_1000", "title": "10:00 AM", "description": "Atención Showroom Armenia"},
-                                    {"id": "btn_time_1130", "title": "11:30 AM", "description": "Atención Showroom Armenia"}
+                                    {"id": "btn_slot_10am", "title": "10:00 AM", "description": "Cupo exclusivo disponible"},
+                                    {"id": "btn_slot_11am", "title": "11:00 AM", "description": "Cupo exclusivo disponible"},
+                                    {"id": "btn_slot_12pm", "title": "12:00 PM", "description": "Cupo exclusivo disponible"}
                                 ]
                             },
                             {
-                                "title": "Horarios de la Tarde",
+                                "title": "Jornada Tarde",
                                 "rows": [
-                                    {"id": "btn_time_1400", "title": "02:00 PM", "description": "Atención Showroom Armenia"},
-                                    {"id": "btn_time_1600", "title": "04:00 PM", "description": "Atención Showroom Armenia"},
-                                    {"id": "btn_time_1700", "title": "05:00 PM", "description": "Atención Showroom Armenia"}
+                                    {"id": "btn_slot_2pm", "title": "02:00 PM", "description": "Cupo exclusivo disponible"},
+                                    {"id": "btn_slot_3pm", "title": "03:00 PM", "description": "Cupo exclusivo disponible"},
+                                    {"id": "btn_slot_4pm", "title": "04:00 PM", "description": "Cupo exclusivo disponible"}
                                 ]
                             }
                         ]
                         await whatsapp_service.send_interactive_list(
                             to_phone=contact.phone,
-                            header_text="Horarios Disponibles",
+                            header_text="ANCLA Special Projects",
                             body_text=ai_reply,
-                            button_text="📅 Ver Horarios",
+                            button_text="⏰ Seleccionar Hora",
                             sections=sections,
-                            footer_text="Ancla Special Projects",
+                            footer_text="Showroom Armenia",
                             db=db
                         )
-                    elif is_initial_greeting:
+                    elif is_mode_selection:
                         buttons = [
-                            {"id": "btn_day_mar28", "title": "📍 Martes 28 Julio"},
-                            {"id": "btn_day_mie29", "title": "📍 Miérc 29 Julio"}
+                            {"id": "btn_mode_presencial_org", "title": "🏠 Visita Presencial"},
+                            {"id": "btn_mode_virtual_org", "title": "📞 Asesoría Virtual"}
                         ]
                         await whatsapp_service.send_interactive_buttons(
                             to_phone=contact.phone,
                             body_text=ai_reply,
                             buttons=buttons,
                             header_text="ANCLA Special Projects",
-                            footer_text="Selecciona el día de tu preferencia",
+                            footer_text="Selecciona tu modalidad preferida",
                             db=db
                         )
                     elif is_proposal:
@@ -926,11 +1121,84 @@ async def autopilot_sweeper_job(ctx):
     finally:
         db.close()
 
+async def morning_8am_broadcast_job(ctx):
+    """
+    Job programado de Sofi en la nube (Railway) que se dispara exactamente a las 8:00 AM (COT).
+    Envía el mensaje oficial de Liliana León a los confirmados del Miércoles 29 de Julio.
+    """
+    logger.info("Sofi Worker: Iniciando recordatorio masivo matutino de las 8:00 AM...")
+    db = SessionLocal()
+    try:
+        from app.routers.showroom import get_showroom_citas_json
+        data = get_showroom_citas_json(db)
+        wednesday_list = [x for x in data if "Miércoles 29" in x['day']]
+
+        logger.info(f"Sofi Worker: Enviando a {len(wednesday_list)} confirmados...")
+
+        for item in wednesday_list:
+            phone = item['phone']
+            name = item['name'].split()[0] if item['name'] else "Estimado/a"
+            hour = item['time']
+
+            msg_body = (
+                f"Muy buenos días, {name}!\n\n"
+                f"Te habla *Liliana León*, Directora Líder de *Ancla Special Projects*.\n\n"
+                f"Es un gusto saludarte. Queremos confirmar tu asistencia a nuestra *Gran Inauguración VIP* de nuestro nuevo Showroom y Sala de Ventas en Colombia.\n\n"
+                f"*Tu cita*: Hoy, *Miércoles 29 de Julio* a las *{hour}*\n"
+                f"*Ubicación*: Armenia, Quindío - Avenida Centenario, frente a Pan y Miel.\n"
+                f"*GPS Google Maps*: https://maps.google.com/?q=4.5616751,-75.6455612\n\n"
+                f"Para nosotros es muy importante contar con tu presencia. Nos confirmas tu asistencia?\n\n"
+                f"Te esperamos!\n"
+                f"_Liliana León - Directora Líder, Ancla Special Projects_"
+            )
+
+            buttons = [
+                {"id": "btn_confirm_today", "title": "📍 Confirmar Asistencia"},
+                {"id": "btn_reschedule", "title": "⏰ Cambiar de Hora"},
+                {"id": "btn_contact_liliana", "title": "📲 Hablar con Liliana"}
+            ]
+
+            contact_id = item['contact_id']
+            db_msg = Message(
+                contact_id=contact_id,
+                sender_type=SenderType.AI,
+                channel=ChannelType.WHATSAPP,
+                message_type=MessageType.TEXT,
+                content=msg_body,
+                status=MessageStatus.SENT
+            )
+            db.add(db_msg)
+            db.commit()
+
+            try:
+                await whatsapp_service.send_interactive_buttons(
+                    to_phone=phone,
+                    body_text=msg_body,
+                    buttons=buttons,
+                    header_text="ANCLA Special Projects",
+                    footer_text="Confirmación VIP Showroom Armenia",
+                    db=db
+                )
+            except Exception:
+                await whatsapp_service.send_text_message(
+                    to_phone=phone,
+                    message_text=msg_body,
+                    db=db
+                )
+
+        logger.info("Sofi Worker: Recordatorio matutino de las 8:00 AM completado exitosamente.")
+    except Exception as e:
+        logger.error(f"Error en morning_8am_broadcast_job: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
 class WorkerSettings:
     """Configuración que lee arq para lanzar el Worker"""
-    functions = [process_whatsapp_message, crm_daily_backup_job, autopilot_sweeper_job]
+    functions = [process_whatsapp_message, crm_daily_backup_job, autopilot_sweeper_job, morning_8am_broadcast_job]
     cron_jobs = [
         cron(crm_daily_backup_job, hour=0, minute=0), # Todos los días a la medianoche
-        cron(autopilot_sweeper_job, minute=set(range(60))) # Se ejecuta cada minuto automáticamente (0% sobrecarga)
+        cron(autopilot_sweeper_job, minute=set(range(60))), # Se ejecuta cada minuto automáticamente (0% sobrecarga)
+        cron(morning_8am_broadcast_job, hour=13, minute=0, day=29, month=7) # 8:00 AM Hora Colombia (13:00 UTC) Miércoles 29 de Julio
     ]
     redis_settings = redis_settings

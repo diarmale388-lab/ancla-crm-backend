@@ -47,6 +47,7 @@ async def _send_confirmations(attendees, message_text, delay_seconds, admin_id, 
             buttons = [
                 {"id": "btn_confirm_today", "title": "Confirmo hoy"},
                 {"id": "btn_confirm_tomorrow", "title": "Asistire manana"},
+                {"id": "btn_no_attend", "title": "No podre asistir"},
             ]
             logger.info("Enviando reconfirmacion %d/%d a %s (%s)", idx + 1, len(attendees), phone, name)
             await whatsapp_service.send_interactive_buttons(

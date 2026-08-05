@@ -10,22 +10,21 @@ logger = logging.getLogger("database")
 NEON_OFFICIAL_URL = "postgresql://neondb_owner:npg_u0jKzE8lWQfb@ep-misty-night-aw10uqbm.c-12.us-east-1.aws.neon.tech/neondb?sslmode=require"
 SQLITE_FALLBACK_URL = "sqlite:///./crm.db"
 
-use_neon = os.getenv("USE_NEON", "0") == "1"
 raw_db_url = settings.DATABASE_URL or NEON_OFFICIAL_URL
 
-if use_neon and raw_db_url and not raw_db_url.startswith("sqlite"):
+if raw_db_url and not raw_db_url.startswith("sqlite"):
     try:
         test_engine = create_engine(
             raw_db_url,
             pool_pre_ping=True,
-            pool_size=5,
-            max_overflow=5,
-            connect_args={"connect_timeout": 3}
+            pool_size=20,
+            max_overflow=30,
+            connect_args={"connect_timeout": 10}
         )
         with test_engine.connect() as conn:
             conn.execute(text("SELECT count(*) FROM users"))
         engine = test_engine
-        logger.info("Conexión a PostgreSQL (Neon) verificada y activa.")
+        logger.info("Conexión a PostgreSQL verificada y activa.")
     except Exception as e_pg:
         logger.warning(f"No se pudo consultar PostgreSQL ({e_pg}). Activando respaldo automático a SQLite local.")
         engine = create_engine(

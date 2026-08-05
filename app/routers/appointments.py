@@ -69,25 +69,50 @@ def get_available_slots(
     
     reserved_times = {app.datetime for app in appointments}
 
-    # Generar slots de 1 hora
+    # Generar slots según tipo de cita (PRESENCIAL vs VIRTUAL/LLAMADA) y día de la semana
     slots = []
     current_time = datetime.utcnow()
-    
-    for i in range(1, 8):  # Próximos 7 días (comenzando mañana)
+
+    is_presencial = contact.source and any(w in contact.source.lower() for w in ["showroom", "local", "armenia", "presencial"])
+
+    for i in range(1, 8):  # Próximos 7 días
         day_date = today + timedelta(days=i)
-        day_of_week = day_date.weekday() # 0 = Lunes, 6 = Domingo
-        
-        if day_of_week in avail_by_day:
-            av = avail_by_day[day_of_week]
-            start_dt = datetime.combine(day_date, av.start_time)
-            end_dt = datetime.combine(day_date, av.end_time)
-            
-            # Generar horas
-            temp_dt = start_dt
-            while temp_dt + timedelta(hours=1) <= end_dt:
-                if temp_dt not in reserved_times and temp_dt > current_time:
+        day_of_week = day_date.weekday()  # 0 = Lunes, 5 = Sábado, 6 = Domingo
+
+        if day_of_week == 6:
+            continue  # Domingo no laborable
+
+        if is_presencial:
+            # 🟢 PRESENCIAL (Showroom Armenia): 9:30 AM - 12:00 PM y 2:00 PM - 4:00 PM (Máx 2 personas/citas por hora)
+            morning_start = time(9, 30, 0)
+            morning_end = time(12, 0, 0)
+            afternoon_start = time(14, 0, 0) if day_of_week < 5 else None
+            afternoon_end = time(16, 0, 0) if day_of_week < 5 else None
+            interval_min = 30
+            max_capacity_per_slot = 2
+        else:
+            # 💻 VIRTUAL / LLAMADA: L-V (10:00 AM - 12:00 PM y 2:00 PM - 4:30 PM), Sábados (10:00 AM - 12:00 PM únicamente)
+            morning_start = time(10, 0, 0)
+            morning_end = time(12, 0, 0)
+            afternoon_start = time(14, 0, 0) if day_of_week < 5 else None
+            afternoon_end = time(16, 30, 0) if day_of_week < 5 else None
+            interval_min = 30
+            max_capacity_per_slot = 1
+
+        temp_dt = datetime.combine(day_date, morning_start)
+        day_end_dt = datetime.combine(day_date, afternoon_end if afternoon_end else morning_end)
+
+        while temp_dt <= day_end_dt:
+            slot_time = temp_dt.time()
+            is_in_morning = (morning_start <= slot_time <= morning_end)
+            is_in_afternoon = (afternoon_start and afternoon_end and afternoon_start <= slot_time <= afternoon_end)
+
+            if is_in_morning or is_in_afternoon:
+                # Contar citas existentes en ese mismo slot
+                slot_count = sum(1 for app in appointments if app.datetime == temp_dt)
+
+                if slot_count < max_capacity_per_slot and temp_dt > current_time:
                     formatted_time = temp_dt.strftime("%A %d de %B, %I:%M %p")
-                    # Traducir los días al español de forma simple
                     day_translations = {
                         "Monday": "Lunes", "Tuesday": "Martes", "Wednesday": "Miércoles",
                         "Thursday": "Jueves", "Friday": "Viernes", "Saturday": "Sábado", "Sunday": "Domingo",
@@ -97,12 +122,13 @@ def get_available_slots(
                     }
                     for en, es in day_translations.items():
                         formatted_time = formatted_time.replace(en, es)
-                        
+
                     slots.append(SlotResponse(
                         datetime=temp_dt,
                         formatted_time=formatted_time
                     ))
-                temp_dt += timedelta(hours=1)
+
+            temp_dt += timedelta(minutes=interval_min)
                 
     return slots
 

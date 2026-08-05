@@ -114,6 +114,11 @@ class WhatsAppService:
             "Content-Type": "application/json"
         }
         
+        # Formatear el texto para que la conversación en el CRM muestre visualmente los botones enviados
+        btn_lines = [f"  {idx+1}️⃣ {str(b['title']).strip()}" for idx, b in enumerate(buttons)]
+        btn_footer = "\n\n🔘 [Botones Táctiles Enviados]:\n" + "\n".join(btn_lines)
+        full_display_body = body_text + btn_footer if "🔘 [Botones Táctiles" not in body_text else body_text
+
         interactive_data = {
             "type": "button",
             "body": {"text": body_text},
@@ -152,10 +157,10 @@ class WhatsAppService:
                     return res.json()
                 else:
                     logger.warning(f"Fallo en botones interactivos Meta ({res.status_code}): {res.text}. Usando fallback a texto.")
-                    return await self.send_text_message(to_phone, body_text, db)
+                    return await self.send_text_message(to_phone, full_display_body, db)
         except Exception as e:
             logger.error(f"Excepción en envío de botones interactivos: {e}")
-            return await self.send_text_message(to_phone, body_text, db)
+            return await self.send_text_message(to_phone, full_display_body, db)
 
     async def send_interactive_list(self, to_phone: str, header_text: str, body_text: str, button_text: str, sections: list, footer_text: Optional[str] = None, db: Optional[Any] = None) -> Optional[Dict[str, Any]]:
         """
@@ -171,6 +176,16 @@ class WhatsAppService:
             "Content-Type": "application/json"
         }
         
+        # Formatear la lista para visualización clara en el chat del CRM
+        list_lines = []
+        for sec in sections:
+            list_lines.append(f"📋 *{sec.get('title', 'Opciones')}*:")
+            for row in sec.get("rows", []):
+                desc_str = f" - {row.get('description')}" if row.get('description') else ""
+                list_lines.append(f"  • {row.get('title')}{desc_str}")
+        list_summary = "\n\n📱 [Menú Desplegable de Opciones Enviado]:\n" + "\n".join(list_lines)
+        full_display_body = body_text + list_summary if "📱 [Menú Desplegable" not in body_text else body_text
+
         list_data = {
             "type": "list",
             "header": {"type": "text", "text": header_text[:60]},
@@ -199,10 +214,10 @@ class WhatsAppService:
                     return res.json()
                 else:
                     logger.warning(f"Fallo en lista interactiva Meta ({res.status_code}): {res.text}. Usando fallback a texto.")
-                    return await self.send_text_message(to_phone, body_text, db)
+                    return await self.send_text_message(to_phone, full_display_body, db)
         except Exception as e:
             logger.error(f"Excepción en envío de lista interactiva: {e}")
-            return await self.send_text_message(to_phone, body_text, db)
+            return await self.send_text_message(to_phone, full_display_body, db)
 
     async def send_template_message(self, to_phone: str, template_name: str, language_code: str = "es", components: list = None, db: Optional[Any] = None) -> Optional[Dict[str, Any]]:
         """

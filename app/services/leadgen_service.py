@@ -21,25 +21,32 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
     raw_phone = lead_data.get("phone_number") or lead_data.get("phone") or lead_data.get("whatsapp", "")
     raw_city = lead_data.get("city") or lead_data.get("ciudad", "")
 
-    # Preguntas personalizadas - Extracción dinámica para cualquier formato de Meta Lead Ads
-    asistencia_presencial = lead_data.get("Asistencia_Presencial") or lead_data.get("asistencia_presencial") or lead_data.get("asistencia", "")
+    # Preguntas personalizadas - Extracción dinámica para Campañas Meta Ads (Local vs Nacional)
+    asistencia_presencial = lead_data.get("Asistencia_Presencial") or lead_data.get("asistencia_presencial") or lead_data.get("urgencia_visita") or lead_data.get("asistencia", "")
     estado_terreno = lead_data.get("Estado_Terreno") or lead_data.get("estado_terreno") or lead_data.get("terreno", "")
     proposito_proyecto = lead_data.get("Proposito_Proyecto") or lead_data.get("proposito_proyecto") or lead_data.get("proposito", "")
     tipo_perfil = lead_data.get("Tipo_Perfil") or lead_data.get("tipo_perfil") or lead_data.get("perfil", "")
+    region_construccion = lead_data.get("Region_Construccion") or lead_data.get("region_construccion") or lead_data.get("region", "") or raw_city
+    preferencia_contacto = lead_data.get("Preferencia_Contacto") or lead_data.get("preferencia_contacto") or lead_data.get("preferencia", "")
+    form_title = lead_data.get("form_name") or lead_data.get("form_title") or lead_data.get("ad_name") or "Meta Ads Form"
 
     for k, v in lead_data.items():
         k_lower = str(k).lower()
         val_str = str(v).strip()
         if not val_str:
             continue
-        if any(w in k_lower for w in ["asist", "presencial", "showroom", "28 o 29", "horario de visita"]):
+        if any(w in k_lower for w in ["urgencia", "asist", "presencial", "visita"]):
             asistencia_presencial = val_str
-        elif any(w in k_lower for w in ["terreno", "lote", "propio"]):
+        if any(w in k_lower for w in ["terreno", "lote", "propio"]):
             estado_terreno = val_str
-        elif any(w in k_lower for w in ["proposito", "propósito", "proyecto", "glamping", "turismo"]):
+        if any(w in k_lower for w in ["proposito", "propósito", "proyecto", "glamping", "vivienda"]):
             proposito_proyecto = val_str
-        elif any(w in k_lower for w in ["perfil", "natural", "empresa", "visitas como"]):
+        if any(w in k_lower for w in ["perfil", "natural", "empresa", "inversionista"]):
             tipo_perfil = val_str
+        if any(w in k_lower for w in ["region", "región", "donde construir", "dónde construir", "ciudad de construccion", "ciudad o departamento", "pensado construir"]):
+            region_construccion = val_str
+        if any(w in k_lower for w in ["preferencia", "videollamada", "zoom", "meet", "contacto", "asesoría personalizada", "asesoria personalizada", "prefieres recibir"]):
+            preferencia_contacto = val_str
 
     # Sanitizar y normalizar teléfono (REGLA DE UNIFICACIÓN)
     clean_phone = re.sub(r'[^\d]', '', str(raw_phone))
@@ -61,6 +68,31 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
     contact = db.query(Contact).filter(Contact.phone == clean_phone).first()
     is_new = False
 
+    # Identificar si es Campaña Local o Nacional
+    form_lower = str(form_title).lower()
+    if "nacional" in form_lower or "virtual" in form_lower:
+        campaign_type = "CAMPAÑA NACIONAL (Citas Virtuales)"
+    else:
+        campaign_type = "CAMPAÑA LOCAL (Showroom Armenia)"
+
+    # Identificar canal de origen
+    platform = str(lead_data.get("platform") or lead_data.get("channel") or lead_data.get("source_type") or "").lower()
+    if "instagram" in platform or "ig" in platform:
+        channel_name = "Instagram Ads"
+    elif "facebook" in platform or "fb" in platform:
+        channel_name = "Facebook Ads"
+    else:
+        channel_name = "Meta Lead Ads"
+
+    channel_tag = f"[Canal: {channel_name}] | [{campaign_type}]"
+
+    # Evaluador de Lead VIP 🔥 (< 5 min)
+    urgencia_lower = str(asistencia_presencial).lower()
+    terreno_lower = str(estado_terreno).lower()
+    is_vip_lead = ("esta semana" in urgencia_lower or "urgente" in urgencia_lower) and ("ya tengo" in terreno_lower or "propio" in terreno_lower or "sí" in terreno_lower or "si" in terreno_lower)
+
+    vip_tag = "[LEAD_VIP_5MIN]" if is_vip_lead else ""
+
     if not contact:
         is_new = True
         contact = Contact(
@@ -68,7 +100,7 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
             first_name=first_name,
             last_name=last_name,
             email=raw_email.lower().strip() if raw_email else None,
-            source="Meta Lead Ads - Inauguracion Showroom Armenia 2026",
+            source=f"{channel_name} - {campaign_type}",
             chatbot_enabled=True,
             habeas_data_authorized=True,
             habeas_data_authorized_at=datetime.utcnow()
@@ -83,53 +115,65 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
             contact.last_name = last_name
         if raw_email and not contact.email:
             contact.email = raw_email.lower().strip()
-        contact.source = "Meta Lead Ads - Inauguracion Showroom Armenia 2026"
+        contact.source = f"{channel_name} - {campaign_type}"
         db.add(contact)
         db.commit()
 
-    # 3. Guardar Respuestas de Preguntas Personalizadas en Notas
+    # 3. Guardar Respuestas de Preguntas Personalizadas y Etiqueta de Canal en Notas
     notes_block = (
-        f"[Lead Ads Form: Formulario Inauguracion Showroom Armenia 2026]\n"
-        f"📍 Ciudad: {raw_city or 'No especificada'}\n"
-        f"🙋 Asistencia Presencial: {asistencia_presencial or 'No especificada'}\n"
+        f"{channel_tag} {vip_tag}\n"
+        f"[Formulario: {form_title}]\n"
+        f"📍 Ciudad/Región Construcción: {region_construccion or raw_city or 'No especificada'}\n"
+        f"⏱️ Urgencia / Asistencia: {asistencia_presencial or 'No especificada'}\n"
         f"🏡 Estado Terreno: {estado_terreno or 'No especificado'}\n"
         f"🎯 Propósito Proyecto: {proposito_proyecto or 'No especificado'}\n"
-        f"👤 Tipo Perfil: {tipo_perfil or 'No especificado'}"
+        f"👤 Tipo Perfil: {tipo_perfil or 'No especificado'}\n"
+        f"📞 Preferencia Contacto: {preferencia_contacto or 'No especificada'}"
     )
 
     if contact.qualification_notes:
-        if "[Lead Ads Form:" not in contact.qualification_notes:
-            contact.qualification_notes = f"{contact.qualification_notes}\n\n{notes_block}"
+        if "[Canal:" not in contact.qualification_notes:
+            contact.qualification_notes = f"{channel_tag} {vip_tag}\n{contact.qualification_notes}\n\n{notes_block}"
     else:
         contact.qualification_notes = notes_block
 
     db.add(contact)
     db.commit()
 
-    # 4. Evaluación de la Condición (RUTA A vs RUTA B)
-    asistencia_lower = str(asistencia_presencial).lower()
-    city_lower = str(raw_city).lower()
+    # Evaluación de retraso para saludo con disculpa si se creó antes de hoy
+    now_utc = datetime.utcnow()
+    is_delayed = (now_utc.date() > contact.created_at.date()) or ((now_utc - contact.created_at).total_seconds() > 14400)
     
-    # Es RUTA B (Virtual / Lista de Espera VIP) si la respuesta de asistencia dice "no" o "virtual", o si está en otra ciudad fuera del eje cafetero y la asistencia está vacía
-    is_ruta_b = any(token in asistencia_lower for token in ["no", "otra región", "otra region", "virtual", "lista de espera"])
-    if not is_ruta_b and not asistencia_presencial:
-        # Si no especificó asistencia, guiarse por ciudad
-        if any(c in city_lower for c in ["bogot", "medell", "cali", "barranquilla", "cartagena", "bucaramanga", "cucuta", "ibague", "pasto"]):
-            is_ruta_b = True
+    if is_delayed:
+        greeting_prefix = f"¡Hola {first_name}! 👋 Te ofrecemos una sincera disculpa por la demora en responder a tu registro. 🙏✨\n\n"
+    else:
+        greeting_prefix = f"¡Hola {first_name}! 👋 Gracias por registrarte en ANCLA Special Projects. 🏠✨\n\n"
+
+    # 4. Evaluación de la Ruta (LOCAL Presencial vs NACIONAL Virtual)
+    if "nacional" in form_lower or "virtual" in form_lower:
+        is_ruta_b = True
+    elif "local" in form_lower or "showroom" in form_lower or "armenia" in form_lower:
+        is_ruta_b = False
+    else:
+        # Fallback por ciudad
+        asistencia_lower = str(asistencia_presencial).lower()
+        city_lower = str(raw_city or region_construccion).lower()
+        is_ruta_b = any(token in asistencia_lower for token in ["no", "otra región", "otra region", "virtual", "lista de espera"])
+        if not is_ruta_b and not asistencia_presencial:
+            if any(c in city_lower for c in ["bogot", "medell", "cali", "barranquilla", "cartagena", "bucaramanga", "cucuta", "ibague", "pasto"]):
+                is_ruta_b = True
 
     is_ruta_a = not is_ruta_b
 
     contact_display_name = f"{contact.first_name or 'Hola'} {contact.last_name or ''}".strip()
 
     if is_ruta_a:
-        # 🟢 RUTA A (CONFIRMÓ ASISTENCIA PRESENCIAL)
-        logger.info(f"Procesando RUTA A para el lead {contact.phone} ({contact_display_name})")
+        # 🟢 CAMPAÑA LOCAL (SHOWROOM ARMENIA - CITAS PRESENCIALES)
+        logger.info(f"Procesando CAMPAÑA LOCAL para el lead {contact.phone} ({contact_display_name})")
 
-        # Acción 1: Etiqueta [SHOWROOM_PRESENCIAL]
         if "[SHOWROOM_PRESENCIAL]" not in (contact.qualification_notes or ""):
             contact.qualification_notes = f"[Tags]: [SHOWROOM_PRESENCIAL]\n{contact.qualification_notes or ''}"
 
-        # Acción 2: Asignación a Asesor Comercial Humano (Liliana León o User 1)
         user_assigned = db.query(User).filter(User.is_active == True).first()
         if user_assigned:
             contact.assigned_user_id = user_assigned.id
@@ -137,7 +181,6 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
         else:
             agent_name = "Liliana León"
 
-        # Marcar en Kanban en 'Contacto Inicial' o 'Showroom'
         stage = db.query(PipelineStage).filter(PipelineStage.name.ilike("%showroom%") | PipelineStage.name.ilike("%contacto%")).first()
         if stage:
             contact.pipeline_stage_id = stage.id
@@ -145,12 +188,11 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
         db.add(contact)
         db.commit()
 
-        # Acción 3: Mensaje Automático de Salida por WhatsApp RUTA A con Botones de Selección de DÍA (Paso 1)
         msg_ruta_a = (
-            f"¡Hola {contact_display_name}! 👋 Gracias por registrarte a la Gran Inauguración de nuestro Showroom en Armenia. 🏠✨\n\n"
-            f"Te invitamos cordialmente a conocer nuestras casas modulares exhibidas (Flex Home y Cápsula Linvig).\n\n"
+            f"¡Hola {first_name}! 👋 Gracias por tu interés en ANCLA Special Projects. 🏠✨\n\n"
+            f"Vemos que estás en el Eje Cafetero y te gustaría agendar tu visita a nuestro **Showroom en Armenia**.\n\n"
             f"📍 **Ubicación**: Armenia, Quindío — Avenida Centenario, frente a Pan y Miel.\n\n"
-            f"Por favor selecciona el día que prefieres visitarnos:"
+            f"Por favor indícanos qué día te queda mejor para coordinar tu espacio exclusivo:"
         )
 
         db_msg = Message(
@@ -164,10 +206,10 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
         db.add(db_msg)
         db.commit()
 
-        # Botones Táctiles Interactivos de Selección de Día (Paso 1)
         buttons = [
-            {"id": "btn_day_mar28", "title": "📍 Martes 28 Julio"},
-            {"id": "btn_day_mie29", "title": "📍 Miérc 29 Julio"}
+            {"id": "btn_confirm_today", "title": "📍 Visitar esta semana"},
+            {"id": "btn_confirm_tomorrow", "title": "📍 Próxima semana"},
+            {"id": "btn_contact_liliana", "title": "📲 Hablar con Liliana"}
         ]
         try:
             await whatsapp_service.send_interactive_buttons(
@@ -175,16 +217,15 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
                 body_text=msg_ruta_a,
                 buttons=buttons,
                 header_text="ANCLA Special Projects",
-                footer_text="Selecciona el día de tu preferencia",
+                footer_text="Selecciona tu opción preferida",
                 db=db
             )
         except Exception as e_wa:
-            logger.error(f"Error enviando mensaje RUTA A por WhatsApp: {e_wa}")
+            logger.error(f"Error enviando mensaje CAMPAÑA LOCAL por WhatsApp: {e_wa}")
             await whatsapp_service.send_text_message(to_phone=contact.phone, message_text=msg_ruta_a, db=db)
 
-        record_activity(db, contact.id, "leadgen_workflow", f"Workflow RUTA A ejecutado: Asignada etiqueta [SHOWROOM_PRESENCIAL] y asesor {agent_name}.")
+        record_activity(db, contact.id, "leadgen_workflow", f"Workflow CAMPAÑA LOCAL ejecutado: Asignada etiqueta [SHOWROOM_PRESENCIAL] y asesor {agent_name}.")
 
-        # Emitir evento WebSocket en tiempo real para refresco instantáneo del CRM
         try:
             from app.routers.webhooks import manager
             ws_payload = {
@@ -205,11 +246,11 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
             logger.error(f"Error emitiendo WebSocket de nuevo contacto: {ws_err}")
 
     else:
-        # 🔵 RUTA B (NO PUEDE ASISTIR PRESENCIAL / LISTA DE ESPERA VIP / ATENCIÓN VIRTUAL)
-        logger.info(f"Procesando RUTA B para el lead {contact.phone} ({contact_display_name})")
+        # 💻 CAMPAÑA NACIONAL (CITAS VIRTUALES / LLAMADA TELEFÓNICA)
+        logger.info(f"Procesando CAMPAÑA NACIONAL para el lead {contact.phone} ({contact_display_name})")
 
-        if "[LISTA_ESPERA_VIP]" not in (contact.qualification_notes or ""):
-            contact.qualification_notes = f"[Tags]: [LISTA_ESPERA_VIP]\n{contact.qualification_notes or ''}"
+        if "[ASESORIA_VIRTUAL_NACIONAL]" not in (contact.qualification_notes or ""):
+            contact.qualification_notes = f"[Tags]: [ASESORIA_VIRTUAL_NACIONAL]\n{contact.qualification_notes or ''}"
 
         user_assigned = db.query(User).filter(User.is_active == True).first()
         if user_assigned:
@@ -225,12 +266,45 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
         db.add(contact)
         db.commit()
 
-        msg_ruta_b = (
-            f"¡Hola {contact_display_name}! 👋 Gracias por registrarte en ANCLA Special Projects. 🏡✨\n\n"
-            f"Hemos notado que te encuentras fuera de la región o no podrás asistir de forma presencial a nuestro Showroom en Armenia este 28 y 29 de Julio.\n\n"
-            f"🌟 ¡No te preocupes! Has quedado registrado en nuestra **Lista de Espera VIP** para atención personalizada virtual a partir del **Jueves 30 de Julio**.\n\n"
-            f"¿Te gustaría que vayamos agendando desde ya tu **Asesoría Virtual (Llamada 📞 / Google Meet 💻)** para presentarte nuestros modelos FLEX HOME y Cápsula Linvig?"
-        )
+        target_region = region_construccion or raw_city or "tu región"
+        pref_lower = str(preferencia_contacto).lower()
+
+        if "llamada" in pref_lower or "telefón" in pref_lower or "telefon" in pref_lower:
+            msg_ruta_b = (
+                f"¡Hola {first_name}! 👋 Gracias por registrarte en ANCLA Special Projects. 🏠✨\n\n"
+                f"Vemos que deseas construir tu proyecto en **{target_region}** y seleccionaste recibir tu asesoría por **Llamada Telefónica**.\n\n"
+                f"Nuestra Directora Comercial **Liliana León** te contactará para brindarte la información técnica sobre nuestros modelos FLEX HOME y Cápsula Living.\n\n"
+                f"¿Te queda bien recibir la llamada hoy mismo?"
+            )
+            buttons_b = [
+                {"id": "btn_virt_yes", "title": "📞 Sí, llamarme hoy"},
+                {"id": "btn_virt_info", "title": "📅 Agendar horario"},
+                {"id": "btn_contact_liliana", "title": "📲 Hablar con Liliana"}
+            ]
+        elif "video" in pref_lower or "zoom" in pref_lower or "meet" in pref_lower:
+            msg_ruta_b = (
+                f"¡Hola {first_name}! 👋 Gracias por registrarte en ANCLA Special Projects. 🏠✨\n\n"
+                f"Vemos que deseas construir tu proyecto en **{target_region}** y seleccionaste recibir tu **Asesoría Virtual (Google Meet / Zoom)**.\n\n"
+                f"Disponemos de horarios diurnos de **Lunes a Viernes (10:00 AM - 12:00 PM y 2:00 PM - 4:30 PM)** y **Sábados (10:00 AM - 12:00 PM)**.\n\n"
+                f"¿Qué día y jornada te queda más cómodo para agendar tu espacio exclusivo?"
+            )
+            buttons_b = [
+                {"id": "btn_virt_yes", "title": "💻 Agendar Mañana"},
+                {"id": "btn_virt_info", "title": "💻 Agendar Viernes"},
+                {"id": "btn_contact_liliana", "title": "📲 Hablar con Liliana"}
+            ]
+        else:
+            msg_ruta_b = (
+                f"¡Hola {first_name}! 👋 Gracias por registrarte en ANCLA Special Projects. 🏠✨\n\n"
+                f"Vemos que estás interesado en construir en **{target_region}** y recibir asesoría a distancia.\n\n"
+                f"Coordinemos tu **Asesoría Virtual (Google Meet / Zoom)** para presentarte nuestros modelos de arquitectura modular de última generación.\n\n"
+                f"¿Cómo prefieres que agendemos tu espacio?"
+            )
+            buttons_b = [
+                {"id": "btn_virt_yes", "title": "💻 Videollamada Zoom"},
+                {"id": "btn_virt_info", "title": "📞 Llamada telefónica"},
+                {"id": "btn_contact_liliana", "title": "📲 Hablar con Liliana"}
+            ]
 
         db_msg = Message(
             contact_id=contact.id,
@@ -243,10 +317,6 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
         db.add(db_msg)
         db.commit()
 
-        buttons_b = [
-            {"id": "btn_virt_yes", "title": "💻 Sí, agendar virtual"},
-            {"id": "btn_virt_info", "title": "ℹ️ Más información"}
-        ]
         try:
             await whatsapp_service.send_interactive_buttons(
                 to_phone=contact.phone,
@@ -257,7 +327,7 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
                 db=db
             )
         except Exception as e_wa:
-            logger.error(f"Error enviando mensaje RUTA B por WhatsApp: {e_wa}")
+            logger.error(f"Error enviando mensaje CAMPAÑA NACIONAL por WhatsApp: {e_wa}")
             await whatsapp_service.send_text_message(to_phone=contact.phone, message_text=msg_ruta_b, db=db)
 
         record_activity(db, contact.id, "leadgen_workflow", f"Workflow RUTA B ejecutado: Asignada etiqueta [LISTA_ESPERA_VIP] y asesor {agent_name}.")

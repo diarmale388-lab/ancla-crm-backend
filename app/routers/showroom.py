@@ -1171,14 +1171,34 @@ def get_showroom_dashboard(db: Session = Depends(get_db)):
 
 @router.get("/showroom-citas-json")
 def get_showroom_citas_json(db: Session = Depends(get_db)):
+    from app.models.base import Message, SenderType, LeadActivityLog
+
+    # Obtener IDs de contactos que enviaron mensaje explicito de confirmacion en el chat
+    contact_msgs = db.query(Message.contact_id, Message.content).filter(
+        Message.sender_type == SenderType.CONTACT
+    ).all()
+
+    confirmed_contact_ids = set()
+    for cid, content in contact_msgs:
+        txt = (content or "").lower()
+        if txt.startswith("¡hola! completé el formulario"):
+            continue
+        if any(w in txt for w in ["btn_day_mar28", "btn_day_mie29", "btn_confirm", "btn_time", "confirmo", "asistiré", "asistire", "alla estare", "allá estaré", "nos vemos", "sí, confirmar", "si, confirmar", "a las 10", "a las 11", "a las 2", "a las 4", "a las 5", "mañana a las", "miercoles a las"]):
+            if not any(neg in txt for neg in ["no puedo", "no podemos", "cancelar", "imposible"]):
+                confirmed_contact_ids.add(cid)
+
     results = db.query(Appointment, Contact).join(
         Contact, Appointment.contact_id == Contact.id
     ).filter(
         Appointment.status == 'CONFIRMED',
+        Contact.id.in_(list(confirmed_contact_ids)),
         Appointment.datetime >= '2026-07-28 00:00:00',
         Appointment.datetime <= '2026-07-29 23:59:59'
     ).order_by(Appointment.datetime.asc()).all()
     
+    if not results:
+        return []
+
     contacts_data = []
     
     for a, c in results:
@@ -1197,7 +1217,7 @@ def get_showroom_citas_json(db: Session = Depends(get_db)):
             purpose = "Local Comercial / Oficina"
         elif any(w in notes for w in ["desarrollo", "inmobiliario"]):
             purpose = "Desarrollo Inmobiliario"
-        # Detección inteligente de Lote (Sí tiene vs No/Buscando)
+        
         has_lote = "No / Buscando"
         positivos = [
             "ya tengo lote", "si tengo lote", "si, ya tengo", "sí, ya tengo", "tengo lote",
@@ -1215,11 +1235,16 @@ def get_showroom_citas_json(db: Session = Depends(get_db)):
         tiene_contradiccion = any(n in notes for n in negativos)
         if tiene_mencion_positiva and not tiene_contradiccion:
             has_lote = "Sí, ya tiene Lote"
+            
         city = "Armenia"
         for ct in ["quimbaya", "pereira", "cali", "bogota", "bogotá", "cartago", "bello", "paipa", "circasia", "montenegro"]:
             if ct in notes:
                 city = ct.capitalize()
                 break
+                
+        # Evaluación instantánea en memoria O(1)
+        reconfirmed = c.id in confirmed_contact_ids
+        
         day_name = "Martes 28 de Julio" if a.datetime.day == 28 else "Miércoles 29 de Julio"
         time_str = a.datetime.strftime("%I:%M %p").replace(" 0", " ").strip()
         contacts_data.append({
@@ -1236,6 +1261,7 @@ def get_showroom_citas_json(db: Session = Depends(get_db)):
             "origin": origin,
             "purpose": purpose,
             "has_lote": has_lote,
+            "reconfirmed": reconfirmed,
             "notes": c.qualification_notes or "Sin notas adicionales."
         })
     return contacts_data
