@@ -422,33 +422,57 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
         db.add(contact)
         db.commit()
 
-        buttons_slot = [
-            {"id": f"time_09:30_{date_iso}_{modality}", "title": "☀️ 09:30 AM"},
-            {"id": f"time_11:00_{date_iso}_{modality}", "title": "☀️ 11:00 AM"},
-            {"id": f"time_14:00_{date_iso}_{modality}", "title": "⛅ 02:00 PM"}
+        # Construir Menú de Lista Interactiva con TODAS las horas disponibles (Mañana y Tarde)
+        morning_rows = [
+            {"id": f"time_09:30_{date_iso}_{modality}", "title": "☀️ 09:30 AM", "description": "Turno Mañana"},
+            {"id": f"time_10:00_{date_iso}_{modality}", "title": "☀️ 10:00 AM", "description": "Turno Mañana"},
+            {"id": f"time_10:30_{date_iso}_{modality}", "title": "☀️ 10:30 AM", "description": "Turno Mañana"},
+            {"id": f"time_11:00_{date_iso}_{modality}", "title": "☀️ 11:00 AM", "description": "Turno Mañana"},
+            {"id": f"time_11:30_{date_iso}_{modality}", "title": "☀️ 11:30 AM", "description": "Turno Mañana"},
         ]
+        afternoon_rows = [
+            {"id": f"time_14:00_{date_iso}_{modality}", "title": "⛅ 02:00 PM", "description": "Turno Tarde"},
+            {"id": f"time_14:30_{date_iso}_{modality}", "title": "⛅ 02:30 PM", "description": "Turno Tarde"},
+            {"id": f"time_15:00_{date_iso}_{modality}", "title": "⛅ 03:00 PM", "description": "Turno Tarde"},
+            {"id": f"time_15:30_{date_iso}_{modality}", "title": "⛅ 03:30 PM", "description": "Turno Tarde"},
+            {"id": f"time_16:00_{date_iso}_{modality}", "title": "⛅ 04:00 PM", "description": "Turno Tarde"},
+        ]
+
+        # Para sábados, solo jornada mañana
+        if d_obj.weekday() == 5:
+            sections = [{"title": "☀️ Jornada de la Mañana (Sábado)", "rows": morning_rows[:4]}]
+        else:
+            sections = [
+                {"title": "☀️ Jornada de la Mañana", "rows": morning_rows[:4]},
+                {"title": "⛅ Jornada de la Tarde", "rows": afternoon_rows[:5]}
+            ]
 
         time_body = (
             f"¡Perfecto, {name}! 🗓️ Para tu **{'Visita Presencial en Showroom Armenia' if modality == 'PRESENCIAL' else 'Asesoría Virtual'}** "
-            f"el **{formatted_day_name}**, por favor selecciona la hora de tu preferencia:"
+            f"el **{formatted_day_name}**, por favor abre el menú a continuación y selecciona la hora de tu preferencia:"
         )
 
-        await whatsapp_service.send_interactive_buttons(
+        await whatsapp_service.send_interactive_list(
             to_phone=from_phone,
             body_text=time_body,
-            buttons=buttons_slot,
+            button_text="⏰ Seleccionar Hora",
+            sections=sections,
             header_text="ANCLA Special Projects",
-            footer_text="Selecciona tu hora preferida",
+            footer_text="Selecciona tu hora de la lista",
             db=db
         )
 
-        btn_summary = f"\n\n🔘 [Botones Táctiles de Horas Enviados para {formatted_day_name}]:\n  1️⃣ ☀️ 09:30 AM\n  2️⃣ ☀️ 11:00 AM\n  3️⃣ ⛅ 02:00 PM"
+        list_summary = (
+            f"\n\n📱 [Menú Desplegable de Horas Enviado para {formatted_day_name}]:\n"
+            "  • Mañana: 09:30 AM, 10:00 AM, 10:30 AM, 11:00 AM, 11:30 AM\n"
+            "  • Tarde: 02:00 PM, 02:30 PM, 03:00 PM, 03:30 PM, 04:00 PM"
+        )
         db_msg = Message(
             contact_id=contact.id,
             sender_type=SenderType.AI,
             channel=ChannelType.WHATSAPP,
             message_type=MessageType.TEXT,
-            content=time_body + btn_summary,
+            content=time_body + list_summary,
             status=MessageStatus.SENT
         )
         db.add(db_msg)
