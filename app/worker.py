@@ -506,9 +506,11 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
         formatted_day_str = f"{days_es[full_dt.weekday()]} {full_dt.day} de {months_es[full_dt.month]}"
         formatted_time_str = full_dt.strftime("%I:%M %p").lstrip('0')
 
+        assigned_uid = contact.assigned_user_id or 1
         if not appt:
             appt = Appointment(
                 contact_id=contact.id,
+                user_id=assigned_uid,
                 datetime=full_dt,
                 appointment_type=modality,
                 status="CONFIRMED",
@@ -516,6 +518,7 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
             )
             db.add(appt)
         else:
+            appt.user_id = assigned_uid
             appt.datetime = full_dt
             appt.appointment_type = modality
             appt.status = "CONFIRMED"
