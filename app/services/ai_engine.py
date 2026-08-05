@@ -229,6 +229,11 @@ class AIEngine:
         """
         low_msg = (last_message or "").lower().strip()
 
+        # --- 0.0 EVITAR RESPUESTAS DUPLICADAS DURANTE AGENDAMIENTO INTERACTIVO ---
+        if contact.scheduling_state:
+            logger.info(f"Sofi: Contacto {contact.phone} en estado interactivo ({contact.scheduling_state}). Evitando respuesta duplicada del autopiloto.")
+            return None
+
         # --- 0.A SILENCIO ABSOLUTO EN MODO CO-PILOTO HUMANO ---
         if not contact.chatbot_enabled:
             scheduling_keywords = ["agendar", "cita", "reprogramar", "llamar", "llamada", "showroom", "visitar", "visita", "quiero ir"]

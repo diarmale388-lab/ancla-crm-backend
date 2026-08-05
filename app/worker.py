@@ -862,24 +862,12 @@ async def process_whatsapp_message(ctx, payload: dict):
             logger.error(f"Error en flujo de agendamiento WhatsApp: {sched_err}")
 
         # 7.5 Evaluar Botones Interactivos de Campaña Nacional y Atención Humana
-        if button_reply_id in ["btn_virt_yes", "btn_virt_info", "btn_contact_liliana"]:
+        if button_reply_id in ["btn_contact_liliana"]:
             name = f"{contact.first_name or ''}".strip() or "Estimado cliente"
-
-            if button_reply_id == "btn_virt_yes":
-                logger.info(f"Usuario {from_phone} solicitó agendamiento de Cita Virtual.")
-                virt_msg = (
-                    f"¡Excelente elección, {name}! 💻✨\n\n"
-                    "Coordinemos tu *Asesoría Virtual Personalizada* por llamada o videollamada por Google Meet / Zoom.\n\n"
-                    "Por favor indícanos qué día y horario (mañana o tarde) te queda mejor, y uno de nuestros directores comerciales te compartirá el enlace exclusivo. 📲🏡"
-                )
-                await whatsapp_service.send_text_message(to_phone=from_phone, message_text=virt_msg, db=db)
-                return
-
-            elif button_reply_id == "btn_contact_liliana":
-                logger.info(f"Usuario {from_phone} solicitó atención directa con Liliana. Pausando bot.")
-                contact.chatbot_enabled = False  # Handover a humano
-                db.add(contact)
-                db.commit()
+            logger.info(f"Usuario {from_phone} solicitó atención directa con Liliana. Pausando bot.")
+            contact.chatbot_enabled = False  # Handover a humano
+            db.add(contact)
+            db.commit()
 
                 handover_msg = (
                     f"¡Con mucho gusto, {name}! 📲\n\n"
