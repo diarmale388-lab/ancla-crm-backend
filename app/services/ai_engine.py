@@ -1,3 +1,4 @@
+import os
 import logging
 import httpx
 import datetime as dt_module
@@ -174,10 +175,14 @@ class AIEngine:
                 "HTTP-Referer": "https://anclaspecialprojects.com",
                 "X-Title": "ANCLA Special Projects CRM"
             }
+            # Modelos de OpenRouter priorizados por inteligencia y adherencia a instrucciones
             openrouter_models = [
-                "google/gemini-2.5-flash",
-                "meta-llama/llama-3.3-70b-instruct",
-                "google/gemini-3.5-flash"
+                os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet"),
+                "openai/gpt-4o",
+                "deepseek/deepseek-chat",
+                "google/gemini-2.5-pro",
+                "google/gemini-2.0-flash-001",
+                "meta-llama/llama-3.3-70b-instruct"
             ]
             for model_name in openrouter_models:
                 payload = {
