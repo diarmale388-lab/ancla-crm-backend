@@ -301,6 +301,290 @@ async def process_ai_response_after_consent(contact_id: int, last_message_conten
         db.close()
 
 
+async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content: str, button_reply_id: Optional[str], from_phone: str) -> bool:
+    """
+    Máquina de estados estricta de agendamiento por WhatsApp:
+    Paso 1: Modalidad -> Despliega Lista Interactiva de Días (send_interactive_list).
+    Paso 2: Día -> Despliega Botones/Lista Interactivas de Horas libres de ese día.
+    Paso 3: Hora -> Registra Cita en BD, cambia etapa a CITA AGENDADA y envía confirmación formal.
+    """
+    content_lower = (content or "").lower().strip()
+    reply_id = (button_reply_id or "").strip()
+    name = f"{contact.first_name or ''}".strip() or "Estimado cliente"
+
+    # --- PASO 1: SELECCIÓN DE MODALIDAD (Presencial vs Virtual) ---
+    is_presencial_click = reply_id == "btn_presencial" or "visita presencial" in content_lower or "presencial" in content_lower
+    is_virtual_click = reply_id in ["btn_virt_yes", "btn_virt_info", "btn_virtual", "btn_confirm_tomorrow"] or "asesoria virtual" in content_lower or "asesoría virtual" in content_lower or "virtual" in content_lower
+
+    if is_presencial_click or is_virtual_click:
+        modality = "PRESENCIAL" if is_presencial_click else "VIRTUAL"
+        contact.scheduling_state = f"AWAITING_DAY:{modality}"
+        db.add(contact)
+        db.commit()
+
+        # Generar lista interactiva de días dinámicos (Esta semana y Próxima semana)
+        import datetime as dt_mod
+        now_date = dt_mod.date.today()
+        days_es = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+        months_es = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+
+        this_week_rows = []
+        next_week_rows = []
+
+        for i in range(1, 14):
+            d = now_date + dt_mod.timedelta(days=i)
+            if d.weekday() == 6:  # Omitir Domingos
+                continue
+            day_name = days_es[d.weekday()]
+            month_name = months_es[d.month]
+            title_str = f"{day_name} {d.day} de {month_name}"
+            row_item = {
+                "id": f"day_{d.strftime('%Y-%m-%d')}_{modality}",
+                "title": title_str,
+                "description": f"Cupos disponibles para {modality.lower()}"
+            }
+            if i <= 3:
+                this_week_rows.append(row_item)
+            else:
+                next_week_rows.append(row_item)
+
+        sections = []
+        if this_week_rows:
+            sections.append({"title": "📅 Días de Esta Semana", "rows": this_week_rows[:4]})
+        if next_week_rows:
+            sections.append({"title": "🗓️ Días de la Semana Siguiente", "rows": next_week_rows[:5]})
+
+        body_txt = (
+            f"¡Con el mayor de los gustos, {name}! 🏠✨\n\n"
+            f"Para tu **{'Visita Presencial en Showroom Armenia' if modality == 'PRESENCIAL' else 'Asesoría Virtual (Google Meet / Zoom)'}**, "
+            "por favor selecciona el día de tu preferencia para consultar los horarios disponibles:"
+        )
+
+        await whatsapp_service.send_interactive_list(
+            to_phone=from_phone,
+            body_text=body_txt,
+            button_text="📅 Seleccionar Día",
+            sections=sections,
+            header_text="ANCLA Special Projects",
+            footer_text="Selecciona un día de la lista",
+            db=db
+        )
+
+        # Registrar resumen en BD para el CRM
+        summary_txt = f"\n\n📱 [Menú Desplegable de Días Enviado ({modality})]"
+        db_msg = Message(
+            contact_id=contact.id,
+            sender_type=SenderType.AI,
+            channel=ChannelType.WHATSAPP,
+            message_type=MessageType.TEXT,
+            content=body_txt + summary_txt,
+            status=MessageStatus.SENT
+        )
+        db.add(db_msg)
+        db.commit()
+        return True
+
+    # --- PASO 2: SELECCIÓN DE DÍA (ej: "Lunes 10 de Agosto" o "day_2026-08-10_PRESENCIAL") ---
+    is_day_selection = reply_id.startswith("day_") or (contact.scheduling_state and contact.scheduling_state.startswith("AWAITING_DAY")) or any(w in content_lower for w in ["lunes", "martes", "miércoles", "miercoles", "jueves", "viernes", "sábado", "sabado"])
+
+    if is_day_selection:
+        date_iso = None
+        modality = "PRESENCIAL"
+        if reply_id.startswith("day_"):
+            parts = reply_id.split("_")
+            if len(parts) >= 2:
+                date_iso = parts[1]
+            if len(parts) >= 3:
+                modality = parts[2]
+        elif contact.scheduling_state and ":" in contact.scheduling_state:
+            modality = contact.scheduling_state.split(":")[1]
+
+        if not date_iso:
+            import datetime as dt_mod
+            now_date = dt_mod.date.today()
+            days_es_lower = ['lunes', 'martes', 'miércoles', 'miercoles', 'jueves', 'viernes', 'sábado', 'sabado', 'domingo']
+            for i in range(1, 15):
+                d = now_date + dt_mod.timedelta(days=i)
+                d_name = days_es_lower[d.weekday()]
+                if d_name in content_lower or str(d.day) in content_lower:
+                    date_iso = d.strftime('%Y-%m-%d')
+                    break
+            if not date_iso:
+                date_iso = (now_date + dt_mod.timedelta(days=5)).strftime('%Y-%m-%d')
+
+        import datetime as dt_mod
+        d_obj = dt_mod.datetime.strptime(date_iso, '%Y-%m-%d').date()
+        days_es = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+        months_es = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+        formatted_day_name = f"{days_es[d_obj.weekday()]} {d_obj.day} de {months_es[d_obj.month]}"
+
+        contact.scheduling_state = f"AWAITING_TIME:{date_iso}:{modality}"
+        db.add(contact)
+        db.commit()
+
+        buttons_slot = [
+            {"id": f"time_09:30_{date_iso}_{modality}", "title": "☀️ 09:30 AM"},
+            {"id": f"time_11:00_{date_iso}_{modality}", "title": "☀️ 11:00 AM"},
+            {"id": f"time_14:00_{date_iso}_{modality}", "title": "⛅ 02:00 PM"}
+        ]
+
+        time_body = (
+            f"¡Perfecto, {name}! 🗓️ Para tu **{'Visita Presencial en Showroom Armenia' if modality == 'PRESENCIAL' else 'Asesoría Virtual'}** "
+            f"el **{formatted_day_name}**, por favor selecciona la hora de tu preferencia:"
+        )
+
+        await whatsapp_service.send_interactive_buttons(
+            to_phone=from_phone,
+            body_text=time_body,
+            buttons=buttons_slot,
+            header_text="ANCLA Special Projects",
+            footer_text="Selecciona tu hora preferida",
+            db=db
+        )
+
+        btn_summary = f"\n\n🔘 [Botones Táctiles de Horas Enviados para {formatted_day_name}]:\n  1️⃣ ☀️ 09:30 AM\n  2️⃣ ☀️ 11:00 AM\n  3️⃣ ⛅ 02:00 PM"
+        db_msg = Message(
+            contact_id=contact.id,
+            sender_type=SenderType.AI,
+            channel=ChannelType.WHATSAPP,
+            message_type=MessageType.TEXT,
+            content=time_body + btn_summary,
+            status=MessageStatus.SENT
+        )
+        db.add(db_msg)
+        db.commit()
+        return True
+
+    # --- PASO 3: SELECCIÓN DE HORA Y CONFIRMACIÓN DE CITA EN BD ---
+    is_time_selection = reply_id.startswith("time_") or reply_id.startswith("btn_time_") or (contact.scheduling_state and contact.scheduling_state.startswith("AWAITING_TIME")) or any(w in content_lower for w in ["am", "pm", "09:30", "10:00", "11:00", "02:00", "03:00", "04:00", "14:00"])
+
+    if is_time_selection:
+        date_iso = None
+        modality = "PRESENCIAL"
+        time_str = "11:00"
+
+        if reply_id.startswith("time_"):
+            parts = reply_id.split("_")
+            if len(parts) >= 2:
+                time_str = parts[1]
+            if len(parts) >= 3:
+                date_iso = parts[2]
+            if len(parts) >= 4:
+                modality = parts[3]
+        elif contact.scheduling_state and ":" in contact.scheduling_state:
+            parts = contact.scheduling_state.split(":")
+            if len(parts) >= 2:
+                date_iso = parts[1]
+            if len(parts) >= 3:
+                modality = parts[2]
+
+        if not date_iso:
+            import datetime as dt_mod
+            date_iso = (dt_mod.date.today() + dt_mod.timedelta(days=5)).strftime('%Y-%m-%d')
+
+        if "09:30" in content_lower or "9:30" in content_lower:
+            time_str = "09:30"
+        elif "10:00" in content_lower or "10" in content_lower:
+            time_str = "10:00"
+        elif "11:00" in content_lower or "11" in content_lower:
+            time_str = "11:00"
+        elif "02:00" in content_lower or "2:00" in content_lower or "14:00" in content_lower or "2" in content_lower:
+            time_str = "14:00"
+
+        import datetime as dt_mod
+        full_dt_str = f"{date_iso} {time_str}:00"
+        full_dt = dt_mod.datetime.strptime(full_dt_str, "%Y-%m-%d %H:%M:%S")
+
+        from app.models.base import Appointment, LeadActivityLog, PipelineStage
+        appt = db.query(Appointment).filter(
+            Appointment.contact_id == contact.id,
+            Appointment.status == "CONFIRMED"
+        ).first()
+
+        days_es = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+        months_es = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+        formatted_day_str = f"{days_es[full_dt.weekday()]} {full_dt.day} de {months_es[full_dt.month]}"
+        formatted_time_str = full_dt.strftime("%I:%M %p").lstrip('0')
+
+        if not appt:
+            appt = Appointment(
+                contact_id=contact.id,
+                datetime=full_dt,
+                appointment_type=modality,
+                status="CONFIRMED",
+                notes=f"Cita confirmada por el usuario en WhatsApp para {formatted_day_str} a las {formatted_time_str}"
+            )
+            db.add(appt)
+        else:
+            appt.datetime = full_dt
+            appt.appointment_type = modality
+            appt.status = "CONFIRMED"
+            db.add(appt)
+
+        cita_stage = db.query(PipelineStage).filter(PipelineStage.name.ilike("%cita%")).first()
+        if cita_stage:
+            contact.pipeline_stage_id = cita_stage.id
+
+        contact.scheduling_state = None
+        db.add(contact)
+
+        act = LeadActivityLog(
+            contact_id=contact.id,
+            activity_type="appointment_confirmed_whatsapp",
+            description=f"El usuario agendó formalmente su cita {modality} para {full_dt_str} por WhatsApp."
+        )
+        db.add(act)
+        db.commit()
+
+        if modality == "PRESENCIAL":
+            confirm_msg = (
+                f"¡Excelente, {name}! 🗓️✨ Queda **100% CONFIRMADA** tu Visita Presencial en el Showroom de Armenia para el **{formatted_day_str} a las {formatted_time_str}**.\n\n"
+                "📍 **Ubicación del Showroom**:\n"
+                "🏢 Armenia, Quindío — Avenida Centenario, frente a Pan y Miel.\n\n"
+                "🚗 **Toca el enlace de tu aplicación preferida para iniciar la ruta**:\n"
+                "🔹 **Google Maps**: https://maps.google.com/?q=Armenia+Avenida+Centenario+Pan+y+Miel\n"
+                "🔹 **Waze**: https://waze.com/ul?q=Avenida+Centenario+Armenia+Quindio\n\n"
+                "¡Te esperamos con el mayor de los gustos! 🏡🤝"
+            )
+        else:
+            confirm_msg = (
+                f"¡Excelente, {name}! 💻✨ Queda **100% CONFIRMADA** tu **Asesoría Virtual** para el **{formatted_day_str} a las {formatted_time_str}**.\n\n"
+                f"Nuestra Directora Comercial **Liliana León** te contactará al número (+{contact.phone}) para brindarte la asesoría sobre tu proyecto modular. ¡Muchas gracias y nos vemos pronto! 🏡🤝"
+            )
+
+        await whatsapp_service.send_text_message(to_phone=from_phone, message_text=confirm_msg, db=db)
+
+        db_reply = Message(
+            contact_id=contact.id,
+            sender_type=SenderType.AI,
+            channel=ChannelType.WHATSAPP,
+            message_type=MessageType.TEXT,
+            content=confirm_msg,
+            status=MessageStatus.SENT
+        )
+        db.add(db_reply)
+        db.commit()
+
+        ws_payload = {
+            "event": "appointment_created",
+            "data": {
+                "id": appt.id,
+                "contact_id": contact.id,
+                "datetime": appt.datetime.isoformat(),
+                "status": appt.status,
+                "appointment_type": appt.appointment_type
+            }
+        }
+        try:
+            await manager.broadcast(ws_payload)
+        except Exception:
+            pass
+
+        return True
+
+    return False
+
+
 async def process_whatsapp_message(ctx, payload: dict):
     """
     Tarea asíncrona para procesar el evento de WhatsApp recibido desde Meta.
@@ -541,128 +825,14 @@ async def process_whatsapp_message(ctx, payload: dict):
             )
             return
 
-        # 7. Evaluar Respuestas a Botones de Confirmación Showroom
-        if button_reply_id in ["btn_confirm_today", "btn_confirm_tomorrow", "btn_no_attend", "btn_presencial"] or "visita presencial" in content.lower() or "presencial" in content.lower():
-            from app.models.base import Appointment, LeadActivityLog
-            # Buscar cita activa
-            appt = db.query(Appointment).filter(
-                Appointment.contact_id == contact.id,
-                Appointment.status == "CONFIRMED"
-            ).order_by(Appointment.datetime.desc()).first()
-
-            name = f"{contact.first_name or ''}".strip() or "Estimado cliente"
-
-            if button_reply_id in ["btn_confirm_today", "btn_presencial"] or "visita presencial" in content.lower() or "presencial" in content.lower():
-                logger.info(f"Usuario {from_phone} confirmó asistencia para hoy.")
-                if appt:
-                    appt.status = "CONFIRMED"
-                    db.add(appt)
-                
-                act = LeadActivityLog(
-                    contact_id=contact.id,
-                    activity_type="appointment_confirmed_today",
-                    description="El usuario confirmó por WhatsApp interactivo su asistencia presencial para hoy."
-                )
-                db.add(act)
-                db.commit()
-
-                confirm_msg = (
-                    f"¡Excelente, {name}! Te confirmamos que tu reserva VIP está 100% activa. 👍✨\n\n"
-                    "📍 *Aquí tienes la ubicación para llegar fácil*:\n"
-                    "🏢 Armenia, Quindío — Avenida Centenario, frente a Pan y Miel.\n\n"
-                    "🚗 *Toca el enlace de tu aplicación preferida para iniciar la ruta*:\n"
-                    "🔹 *Google Maps*: https://maps.google.com/?q=Armenia+Avenida+Centenario+Pan+y+Miel\n"
-                    "🔹 *Waze*: https://waze.com/ul?q=Avenida+Centenario+Armenia+Quindio\n\n"
-                    "¡Nos vemos en un rato! 🏡✨"
-                )
-                await whatsapp_service.send_text_message(
-                    to_phone=from_phone,
-                    message_text=confirm_msg,
-                    db=db
-                )
-
-                db_reply = Message(
-                    contact_id=contact.id,
-                    sender_type=SenderType.AI,
-                    channel=ChannelType.WHATSAPP,
-                    message_type=MessageType.TEXT,
-                    content=confirm_msg,
-                    status=MessageStatus.SENT
-                )
-                db.add(db_reply)
-                db.commit()
+        # 7. Evaluar Máquina de Estados de Agendamiento de Citas (Presencial & Virtual)
+        try:
+            from app.worker import handle_whatsapp_scheduling_flow
+            handled = await handle_whatsapp_scheduling_flow(db, contact, content, button_reply_id, from_phone)
+            if handled:
                 return
-
-            elif button_reply_id in ["btn_confirm_tomorrow", "btn_virt_yes", "btn_virt_info"] or "asesoria virtual" in content.lower() or "virtual" in content.lower():
-                logger.info(f"Usuario {from_phone} solicitó agendamiento de Asesoría Virtual / Llamada.")
-                
-                reprog_msg = (
-                    f"¡Con el mayor de los gustos, {name}! 💻✨ Para tu **Asesoría Virtual (Google Meet / Zoom)**, "
-                    "por favor selecciona la hora de tu preferencia para separar tu espacio exclusivo:"
-                )
-                buttons_slot = [
-                    {"id": "btn_time_1000", "title": "☀️ 10:00 AM"},
-                    {"id": "btn_time_1100", "title": "☀️ 11:00 AM"},
-                    {"id": "btn_time_1400", "title": "⛅ 02:00 PM"}
-                ]
-                await whatsapp_service.send_interactive_buttons(
-                    to_phone=from_phone,
-                    body_text=reprog_msg,
-                    buttons=buttons_slot,
-                    header_text="ANCLA Special Projects",
-                    footer_text="Selecciona tu hora preferida",
-                    db=db
-                )
-
-                # Guardar en BD con resumen visual de botones para el CRM
-                btn_summary = "\n\n🔘 [Botones Táctiles Enviados]:\n  1️⃣ ☀️ 10:00 AM\n  2️⃣ ☀️ 11:00 AM\n  3️⃣ ⛅ 02:00 PM"
-                db_reply = Message(
-                    contact_id=contact.id,
-                    sender_type=SenderType.AI,
-                    channel=ChannelType.WHATSAPP,
-                    message_type=MessageType.TEXT,
-                    content=reprog_msg + btn_summary,
-                    status=MessageStatus.SENT
-                )
-                db.add(db_reply)
-                db.commit()
-                return
-
-            elif button_reply_id == "btn_no_attend":
-                logger.info(f"Usuario {from_phone} canceló asistencia.")
-                if appt:
-                    appt.status = "CANCELLED"
-                    db.add(appt)
-                
-                act = LeadActivityLog(
-                    contact_id=contact.id,
-                    activity_type="appointment_cancelled_by_user",
-                    description="El usuario canceló por WhatsApp interactivo su asistencia presencial."
-                )
-                db.add(act)
-                db.commit()
-
-                cancel_msg = (
-                    f"Muchas gracias por avisarnos, {name}. Entendemos perfectamente que surgen imprevistos. 🌟\n\n"
-                    "Más adelante, si así lo deseas, podemos coordinar una breve *Asesoría Virtual* por llamada o Google Meet para presentarte el catálogo de casas modulares. ¡Que tengas un excelente día! 🏡🤝"
-                )
-                await whatsapp_service.send_text_message(
-                    to_phone=from_phone,
-                    message_text=cancel_msg,
-                    db=db
-                )
-
-                db_reply = Message(
-                    contact_id=contact.id,
-                    sender_type=SenderType.AI,
-                    channel=ChannelType.WHATSAPP,
-                    message_type=MessageType.TEXT,
-                    content=cancel_msg,
-                    status=MessageStatus.SENT
-                )
-                db.add(db_reply)
-                db.commit()
-                return
+        except Exception as sched_err:
+            logger.error(f"Error en flujo de agendamiento WhatsApp: {sched_err}")
 
         # 7.5 Evaluar Botones Interactivos de Campaña Nacional y Atención Humana
         if button_reply_id in ["btn_virt_yes", "btn_virt_info", "btn_contact_liliana"]:
