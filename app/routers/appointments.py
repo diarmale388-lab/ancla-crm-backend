@@ -164,6 +164,7 @@ async def book_appointment(
         contact_id=payload.contact_id,
         user_id=user_id,
         datetime=payload.datetime,
+        appointment_type=payload.appointment_type or "PRESENCIAL",
         status="CONFIRMED",
         notes=payload.notes
     )

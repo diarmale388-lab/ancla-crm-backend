@@ -6,6 +6,7 @@ class AppointmentBook(BaseModel):
     contact_id: int
     datetime: datetime
     notes: Optional[str] = None
+    appointment_type: Optional[str] = "PRESENCIAL"
 
 class AppointmentResponse(BaseModel):
     id: int
@@ -13,6 +14,7 @@ class AppointmentResponse(BaseModel):
     user_id: int
     datetime: datetime
     status: str
+    appointment_type: Optional[str] = "PRESENCIAL"
     notes: Optional[str] = None
     created_at: datetime
 
