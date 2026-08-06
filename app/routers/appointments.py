@@ -57,7 +57,7 @@ def get_available_slots(
     avail_by_day = {av.day_of_week: av for av in availabilities}
 
     # Obtener citas existentes de los próximos 7 días para ese asesor
-    today = datetime.utcnow().date()
+    today = (datetime.utcnow() - timedelta(hours=5)).date()
     end_date = today + timedelta(days=7)
     
     appointments = db.query(Appointment).filter(
