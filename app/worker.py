@@ -450,7 +450,8 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
         return True
 
     # --- PASO 2: SELECCIÓN DE DÍA (ej: "1", "2", "Lunes 10 de Agosto" o "day_2026-08-06_PRESENCIAL") ---
-    is_day_selection = reply_id.startswith("day_") or (contact.scheduling_state and contact.scheduling_state.startswith("AWAITING_DAY")) or any(w in content_lower for w in ["lunes", "martes", "miércoles", "miercoles", "jueves", "viernes", "sábado", "sabado", "1", "2", "3", "4", "5", "6", "mañana", "hoy"])
+    is_modality_button = reply_id in ["btn_presencial", "btn_virtual", "btn_mode_presencial_org", "btn_mode_presencial_arm", "btn_mode_presencial_per", "btn_mode_virtual_org", "btn_mode_virtual_arm", "btn_mode_virtual_per"]
+    is_day_selection = not is_modality_button and (reply_id.startswith("day_") or any(w in content_lower for w in ["lunes", "martes", "miércoles", "miercoles", "jueves", "viernes", "sábado", "sabado"]))
 
     if is_day_selection and not reply_id.startswith("time_"):
         date_iso = None
