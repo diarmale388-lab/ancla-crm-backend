@@ -365,7 +365,7 @@ class AIEngine:
                 db.add(contact)
                 db.commit()
 
-            current_now = datetime.datetime.now()
+            current_now = datetime.now()
             today_date = current_now.date()
             
             # Mapeo estricto de días
