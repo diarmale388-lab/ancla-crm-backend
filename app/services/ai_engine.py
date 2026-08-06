@@ -292,6 +292,27 @@ class AIEngine:
 
             from app.services.activity import record_activity
 
+            # EXTRACCIÓN AUTOMÁTICA DE ESTADO DE LOTE Y CIUDAD EN TIEMPO REAL (TIPO META ADS)
+            lot_keywords_yes = ["sí tengo lote", "si tengo lote", "tengo lote", "lote propio", "tengo terreno", "tengo la finca", "tengo la parcela", "sí tengo terreno", "si tengo terreno", "ya tengo lote", "ya tengo terreno"]
+            lot_keywords_no = ["no tengo lote", "no tengo terreno", "buscando lote", "no cuento con lote", "sin lote", "buscando terreno", "busco lote", "no tengo el lote"]
+
+            if any(k in msg_lower for k in lot_keywords_yes):
+                contact.lot_status = "Lote Propio"
+                db.add(contact)
+                db.commit()
+            elif any(k in msg_lower for k in lot_keywords_no):
+                contact.lot_status = "Buscando Lote"
+                db.add(contact)
+                db.commit()
+
+            ciudades_comunes = ["armenia", "filandia", "salento", "quimbaya", "circasia", "calarcá", "calarca", "pereira", "manizales", "bogotá", "bogota", "medellín", "medellin", "cali", "ibagué", "ibague", "pasto", "popayán", "popayan", "neiva", "tunja", "paipa", "montenegro", "la tebaida"]
+            for c_city in ciudades_comunes:
+                if c_city in msg_lower:
+                    contact.lot_city = c_city.capitalize()
+                    db.add(contact)
+                    db.commit()
+                    break
+
             # AUTO-EXTRACCIÓN DE PERFIL Y RUTA DESDE EL FORMULARIO DE META ADS
             is_form_submission = bool(msg and ("full name:" in msg_lower or "completé el formulario de meta" in msg_lower or "lead ads payload" in msg_lower))
 
@@ -1625,11 +1646,23 @@ class AIEngine:
     def _heuristic_autopilot(self, contact: Any, last_message: str) -> str:
         name = (contact.first_name if (contact and hasattr(contact, 'first_name')) else str(contact)) or "cliente"
         notes = (contact.qualification_notes if (contact and hasattr(contact, 'qualification_notes')) else "") or ""
-        is_vip = "[LISTA_ESPERA_VIP]" in notes or "virtual" in notes.lower() or "fuera" in notes.lower()
+        lot_st = (contact.lot_status if (contact and hasattr(contact, 'lot_status')) else None) or ""
+        lot_ct = (contact.lot_city if (contact and hasattr(contact, 'lot_city')) else None) or ""
         msg = last_message.lower()
         
         greeting = f"¡Hola {name}! 🏠✨ "
+
+        # Pregunta / Confirmación sobre Lote Propio (Igual a Meta Ads)
+        if lot_st == "Lote Propio":
+            city_str = f" en {lot_ct}" if lot_ct else ""
+            lot_callout = f"📍 *¡Excelente que ya cuentes con terreno propio{city_str}!* Esto facilita la preparación de cimentación y entrega en pocas semanas.\n\n"
+        elif lot_st == "Buscando Lote":
+            lot_callout = f"🏞️ *No te preocupes si aún estás buscando terreno*: nuestras estructuras modulares son adaptables a cualquier topografía una vez elijas tu lote.\n\n"
+        else:
+            lot_callout = f"🌱 *Para orientarte mejor*: ¿Cuentas actualmente con terreno / lote propio o estás en búsqueda?\n\n"
+
         opts_text = (
+            f"{lot_callout}"
             "Ofrecemos dos modalidades de atención personalizada para presentarte todos los detalles y opciones:\n\n"
             "1️⃣ **Visita Presencial en Showroom Armenia** (Av. Centenario, frente a Pan y Miel — Lunes a Sábado).\n"
             "2️⃣ **Asesoría Virtual / Llamada Comercial** (Ideal si estás en otra ciudad o prefieres llamada de asesoría).\n\n"
