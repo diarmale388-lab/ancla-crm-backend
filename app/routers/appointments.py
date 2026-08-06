@@ -226,12 +226,9 @@ def list_appointments(
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
-    Obtiene todas las citas de la agenda para el panel visual del Calendario.
+    Obtiene todas las citas de la agenda para el panel visual del Calendario del CRM.
     """
     query = db.query(Appointment).filter(Appointment.status == "CONFIRMED")
-    if current_user.role != "admin":
-        query = query.filter(Appointment.user_id == current_user.id)
-        
     return query.order_by(Appointment.datetime).all()
 
 
