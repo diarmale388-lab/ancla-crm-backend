@@ -314,12 +314,14 @@ class AIEngine:
                     break
 
             # AUTO-EXTRACCIÓN DE PERFIL Y RUTA DESDE EL FORMULARIO DE META ADS
-            is_form_submission = bool(msg and ("full name:" in msg_lower or "completé el formulario de meta" in msg_lower or "lead ads payload" in msg_lower))
+            is_form_submission = bool(msg and ("full name:" in msg_lower or "completé el formulario" in msg_lower or "lead ads payload" in msg_lower))
 
             if msg and ("full name:" in msg_lower or "completé el formulario" in msg_lower):
                 import re
                 nm = re.search(r'Full name:\s*([^\n\r]+)', msg, re.IGNORECASE)
                 em = re.search(r'Email:\s*([^\n\r]+)', msg, re.IGNORECASE)
+                city_m = re.search(r'construir tu proyecto\?:?\s*([^\n\r]+)', msg, re.IGNORECASE)
+                
                 if nm:
                     fn_parts = nm.group(1).strip().split()
                     if fn_parts:
@@ -329,24 +331,36 @@ class AIEngine:
                     raw_em = em.group(1).strip().lower()
                     if '@' in raw_em:
                         contact.email = raw_em
-                if 'no, estoy en otra región' in msg_lower or 'otra región' in msg_lower:
-                    notes = contact.qualification_notes or ''
-                    if '[LISTA_ESPERA_VIP]' not in notes:
-                        contact.qualification_notes = f"[LISTA_ESPERA_VIP]\n{notes}"
+                if city_m:
+                    contact.lot_city = city_m.group(1).strip()
+                if 'sí, ya tengo' in msg_lower or 'si, ya tengo' in msg_lower or 'ya tengo' in msg_lower:
+                    contact.lot_status = "Lote Propio"
+                elif 'buscando' in msg_lower or 'no tengo' in msg_lower:
+                    contact.lot_status = "Buscando Lote"
+
                 db.add(contact)
                 db.commit()
 
-            # SI ES UN FORMULARIO AUTOMÁTICO DE META ADS REAL, ENRUTAR A CITAS
+            # SI ES UN FORMULARIO AUTOMÁTICO DE META ADS REAL, RECONOCER SUS ELECCIONES
             if is_form_submission:
                 c_fn = contact.first_name or "cliente"
+                city_str = f" en **{contact.lot_city}**" if contact.lot_city else ""
+                lot_str = f"registramos que cuentas con terreno propio{city_str}" if contact.lot_status == "Lote Propio" else "registramos tu solicitud"
+                
+                pref_mod = "Asesoría Personalizada"
+                if "llamada" in msg_lower:
+                    pref_mod = "Llamada Telefónica Comercial"
+                elif "visita" in msg_lower or "showroom" in msg_lower:
+                    pref_mod = "Visita Presencial en Showroom Armenia"
+                elif "virtual" in msg_lower:
+                    pref_mod = "Asesoría Virtual (Google Meet / Zoom)"
+
                 return {
                     "response": (
                         f"¡Hola {c_fn}! 🏠✨ Gracias por registrarte en **ANCLA Special Projects**.\n\n"
-                        f"Te invitamos a conocer nuestras casas modulares exhibidas (Flex Home y Cápsula Living). Ofrecemos dos modalidades de atención personalizada:\n\n"
-                        f"1️⃣ **Visita Presencial en Showroom Armenia** (Av. Centenario, frente a Pan y Miel — Lunes a Sábado: 10:00 AM a 12:00 PM y 02:00 PM a 04:00 PM, máx 2 citas por hora).\n"
-                        f"2️⃣ **Asesoría Virtual / Llamada Comercial** (Ideal si estás en otra ciudad o prefieres llamada de asesoría).\n\n"
-                        f"📍 **GPS Google Maps**: https://maps.google.com/?q=4.5616751,-75.6455612\n\n"
-                        f"¿Qué modalidad prefieres para coordinar tu atención?"
+                        f"Hemos recibido tu formulario completado: {lot_str} y seleccionaste **{pref_mod}**.\n\n"
+                        f"Disponemos de horarios diurnos de Lunes a Sábado para tu atención exclusiva (10:00 AM - 12:00 PM y 02:00 PM - 04:30 PM).\n\n"
+                        f"¿Qué día y horario te queda más cómodo para coordinar tu atención?"
                     )
                 }
 
