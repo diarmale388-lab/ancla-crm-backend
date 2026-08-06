@@ -1523,12 +1523,83 @@ async def morning_8am_broadcast_job(ctx):
     finally:
         db.close()
 
+async def appointment_2h_reminder_cron_job(ctx):
+    """
+    Tarea cron que se ejecuta cada 15 minutos en Railway para buscar citas programadas dentro de las próximas 2 horas.
+    Envía el recordatorio de WhatsApp con botones interactivos y mapas GPS.
+    """
+    db = SessionLocal()
+    try:
+        import datetime as dt_mod
+        colombia_now = dt_mod.datetime.utcnow() - dt_mod.timedelta(hours=5)
+        window_start = colombia_now + dt_mod.timedelta(minutes=105)
+        window_end = colombia_now + dt_mod.timedelta(minutes=135)
+        
+        upcoming_appts = db.query(Appointment).filter(
+            Appointment.status == "CONFIRMED",
+            Appointment.datetime >= window_start,
+            Appointment.datetime <= window_end
+        ).all()
+        
+        for appt in upcoming_appts:
+            contact = db.query(Contact).filter(Contact.id == appt.contact_id).first()
+            if not contact or not contact.phone:
+                continue
+                
+            recent_reminder = db.query(Message).filter(
+                Message.contact_id == contact.id,
+                Message.sender_type == SenderType.AI,
+                Message.content.ilike("%Te recordamos que hoy%")
+            ).first()
+            
+            if recent_reminder:
+                continue
+                
+            time_str = appt.datetime.strftime("%I:%M %p")
+            is_presencial = (appt.appointment_type or "").upper() == "PRESENCIAL"
+            
+            name = contact.first_name or "Estimado cliente"
+            if is_presencial:
+                msg_body = (
+                    f"¡Hola {name}! 🏠✨ Te recordamos que hoy a las **{time_str}** "
+                    f"tenemos agendada tu **Visita Presencial en nuestro Showroom de Armenia** (Av. Centenario, frente a Pan y Miel).\n\n"
+                    f"🚗 **Toca para abrir la ruta en tu aplicación preferida**:\n"
+                    f"🔹 **Google Maps**: https://maps.google.com/?q=Armenia+Avenida+Centenario+Pan+y+Miel\n"
+                    f"🔹 **Waze**: https://waze.com/ul?q=Avenida+Centenario+Armenia+Quindio\n\n"
+                    f"¡Nos vemos en un par de horas! 🏡🤝"
+                )
+            else:
+                msg_body = (
+                    f"¡Hola {name}! 💻✨ Te recordamos que hoy a las **{time_str}** "
+                    f"tenemos agendada tu **Asesoría Virtual (Google Meet / Zoom o Llamada Comercial)** con nuestro equipo de ANCLA Special Projects.\n\n"
+                    f"¡En breve nos comunicaremos contigo! 📲🤝"
+                )
+                
+            await whatsapp_service.send_text_message(to_phone=contact.phone, message_text=msg_body, db=db)
+            
+            db_msg = Message(
+                contact_id=contact.id,
+                sender_type=SenderType.AI,
+                channel=ChannelType.WHATSAPP,
+                message_type=MessageType.TEXT,
+                content=msg_body,
+                status=MessageStatus.SENT
+            )
+            db.add(db_msg)
+            db.commit()
+    except Exception as e:
+        logger.error(f"Error en appointment_2h_reminder_cron_job: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
 class WorkerSettings:
     """Configuración que lee arq para lanzar el Worker"""
-    functions = [process_whatsapp_message, crm_daily_backup_job, autopilot_sweeper_job, morning_8am_broadcast_job]
+    functions = [process_whatsapp_message, crm_daily_backup_job, autopilot_sweeper_job, morning_8am_broadcast_job, appointment_2h_reminder_cron_job]
     cron_jobs = [
         cron(crm_daily_backup_job, hour=0, minute=0), # Todos los días a la medianoche
         cron(autopilot_sweeper_job, minute=set(range(60))), # Se ejecuta cada minuto automáticamente (0% sobrecarga)
+        cron(appointment_2h_reminder_cron_job, minute=set(range(0, 60, 15))), # Cada 15 minutos
         cron(morning_8am_broadcast_job, hour=13, minute=0, day=29, month=7) # 8:00 AM Hora Colombia (13:00 UTC) Miércoles 29 de Julio
     ]
     redis_settings = redis_settings
