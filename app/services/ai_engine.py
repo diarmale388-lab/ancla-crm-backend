@@ -201,10 +201,8 @@ class AIEngine:
             # Modelos de OpenRouter priorizados por inteligencia y adherencia a instrucciones
             openrouter_models = [
                 os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat"),
-                "anthropic/claude-3.5-sonnet",
-                "openai/gpt-4o",
-                "google/gemini-2.5-pro",
-                "google/gemini-2.0-flash-001"
+                "deepseek/deepseek-r1",
+                "openai/gpt-4o-mini"
             ]
             for model_name in openrouter_models:
                 payload = {
