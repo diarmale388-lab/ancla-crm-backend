@@ -694,18 +694,22 @@ class AIEngine:
                 }
 
             if any(w in msg_lower for w in ["btn_mode_virtual", "btn_mode_virtual_org", "btn_mode_virtual_arm", "btn_mode_virtual_per", "asesoría virtual", "asesoria virtual", "llamada virtual", "modalidad virtual"]):
-                return {
-                    "response": (
-                        f"¡Con mucho gusto, {c_name}! 📞✨ Te registramos para tu **Asesoría Virtual / Llamada Comercial** con un especialista en proyectos modulares.\n\n"
-                        f"Para coordinar tu llamada personalizada (10 a 15 minutos), contamos con disponibilidad de Lunes a Sábado:\n\n"
-                        f"• **Jornada Mañana**: 10:00 AM a 01:00 PM (10:00 AM, 11:00 AM, 12:00 PM)\n"
-                        f"• **Jornada Tarde**: 02:00 PM a 05:00 PM (02:00 PM, 03:00 PM, 04:00 PM)\n\n"
-                        f"¿Qué día y hora prefieres que te llamemos a este número?"
-                    )
-                }
-                contact.scheduling_state = None
+                contact.scheduling_state = "AWAITING_DAY"
                 db.add(contact)
                 db.commit()
+                return {
+                    "response": (
+                        f"¡Con mucho gusto, {c_name}! 💻✨ Registramos tu solicitud para **Asesoría Virtual (Google Meet / Zoom o Llamada Telefónica)**.\n\n"
+                        f"Selecciona el día de tu preferencia para coordinar tu sesión personalizada (15 min):\n\n"
+                        f"• **1️⃣ Lunes 10 de Agosto**\n"
+                        f"• **2️⃣ Martes 11 de Agosto**\n"
+                        f"• **3️⃣ Miércoles 12 de Agosto**\n"
+                        f"• **4️⃣ Jueves 13 de Agosto**\n"
+                        f"• **5️⃣ Viernes 14 de Agosto**\n"
+                        f"• **6️⃣ Sábado 15 de Agosto**\n\n"
+                        f"¿Qué día prefieres para coordinar tu atención?"
+                    )
+                }
 
                 # Verificar qué datos de calificación faltan en la Ficha del CRM
                 missing_items = []
