@@ -442,8 +442,8 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
 
         return True
 
-    # --- PASO 2: SELECCIÓN DE DÍA (ej: "Lunes 10 de Agosto" o "day_2026-08-10_PRESENCIAL") ---
-    is_day_selection = reply_id.startswith("day_") or (contact.scheduling_state and contact.scheduling_state.startswith("AWAITING_DAY")) or any(w in content_lower for w in ["lunes", "martes", "miércoles", "miercoles", "jueves", "viernes", "sábado", "sabado"])
+    # --- PASO 2: SELECCIÓN DE DÍA (ej: "1", "2", "Lunes 10 de Agosto" o "day_2026-08-06_PRESENCIAL") ---
+    is_day_selection = reply_id.startswith("day_") or (contact.scheduling_state and contact.scheduling_state.startswith("AWAITING_DAY")) or any(w in content_lower for w in ["lunes", "martes", "miércoles", "miercoles", "jueves", "viernes", "sábado", "sabado", "1", "2", "3", "4", "5", "6", "mañana", "hoy"])
 
     if is_day_selection and not reply_id.startswith("time_"):
         date_iso = None
@@ -458,17 +458,40 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
             modality = contact.scheduling_state.split(":")[1]
 
         if not date_iso:
+            import re
             import datetime as dt_mod
-            now_date = dt_mod.date.today()
-            days_es_lower = ['lunes', 'martes', 'miércoles', 'miercoles', 'jueves', 'viernes', 'sábado', 'sabado', 'domingo']
-            for i in range(1, 15):
-                d = now_date + dt_mod.timedelta(days=i)
-                d_name = days_es_lower[d.weekday()]
-                if d_name in content_lower or str(d.day) in content_lower:
-                    date_iso = d.strftime('%Y-%m-%d')
+            now_dt = dt_mod.datetime.now()
+            
+            # 1. Obtener los 6 días disponibles reales partiendo de mañana (excluyendo domingos)
+            available_dates = []
+            for i in range(1, 8):
+                t_date = now_dt + dt_mod.timedelta(days=i)
+                if t_date.weekday() == 6:  # Omitir domingos
+                    continue
+                available_dates.append(t_date.strftime('%Y-%m-%d'))
+                if len(available_dates) == 6:
                     break
+
+            # 2. Verificar si el usuario escribió un número de opción (ej: "1", "el 1", "opcion 1")
+            num_match = re.search(r'\b([1-6])\b', content_lower)
+            if num_match:
+                idx = int(num_match.group(1)) - 1
+                if 0 <= idx < len(available_dates):
+                    date_iso = available_dates[idx]
+
+            # 3. Si no fue por número, buscar por nombre del día
             if not date_iso:
-                date_iso = (now_date + dt_mod.timedelta(days=5)).strftime('%Y-%m-%d')
+                days_es_lower = ['lunes', 'martes', 'miércoles', 'miercoles', 'jueves', 'viernes', 'sábado', 'sabado']
+                for i in range(1, 15):
+                    d = now_dt.date() + dt_mod.timedelta(days=i)
+                    d_name = days_es_lower[d.weekday() if d.weekday() < 7 else 0]
+                    if d_name in content_lower:
+                        date_iso = d.strftime('%Y-%m-%d')
+                        break
+
+            # 4. Fallback por defecto al primer día disponible (mañana)
+            if not date_iso and available_dates:
+                date_iso = available_dates[0]
 
         import datetime as dt_mod
         d_obj = dt_mod.datetime.strptime(date_iso, '%Y-%m-%d').date()
