@@ -314,7 +314,19 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
     name = f"{contact.first_name or ''}".strip() or "Estimado cliente"
 
     # --- PASO 3: SELECCIÓN DE HORA Y CONFIRMACIÓN DE CITA EN BD ---
-    is_time_selection = reply_id.startswith("time_") or reply_id.startswith("btn_time_") or (contact.scheduling_state and contact.scheduling_state.startswith("AWAITING_TIME") and not reply_id.startswith("day_"))
+    import re
+    has_explicit_hour = (
+        reply_id.startswith("time_") or 
+        reply_id.startswith("btn_time_") or 
+        bool(re.search(r'\b(0?[1-9]|1[0-6]):([0-5][0-9])\b', content_lower)) or
+        any(w in content_lower for w in ["4:00", "04:00", "16:00", "4pm", "4 pm", "3:30", "15:30", "3:00", "15:00", "3pm", "3 pm", "2:30", "14:30", "2:00", "14:00", "2pm", "2 pm", "11:30", "11:00", "11am", "11 am", "10:30", "10:00", "10am", "10 am", "9:30", "09:30", "las 10", "las 11", "las 4", "las 3", "las 2", "las 9"])
+    )
+
+    is_time_selection = (
+        reply_id.startswith("time_") or 
+        reply_id.startswith("btn_time_") or 
+        ((contact.scheduling_state or "").startswith("AWAITING_TIME") and has_explicit_hour and not reply_id.startswith("day_"))
+    )
 
     if is_time_selection:
         date_iso = None
