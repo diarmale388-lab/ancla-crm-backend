@@ -21,8 +21,8 @@ def ensure_default_availability(db: Session, user_id: int):
     """
     availabilities = db.query(Availability).filter(Availability.user_id == user_id).all()
     if not availabilities:
-        # Lunes a Viernes (0 a 4)
-        for day in range(5):
+        # Lunes a Sábado (0 a 5)
+        for day in range(6):
             av = Availability(
                 user_id=user_id,
                 day_of_week=day,
