@@ -140,14 +140,16 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
     db.add(contact)
     db.commit()
 
-    # Guardar la respuesta del formulario como un mensaje visible del cliente en el chat de WhatsApp
+    # Guardar la respuesta del formulario como un mensaje visible del cliente en el chat de WhatsApp con formato completo
     form_chat_msg = (
-        f"📋 **RESPUESTAS DEL FORMULARIO META ADS**:\n\n"
-        f"📍 **Ciudad/Región**: {region_construccion or raw_city or 'No especificada'}\n"
-        f"🏡 **Estado Terreno**: {estado_terreno or 'No especificado'}\n"
-        f"🎯 **Propósito**: {proposito_proyecto or 'No especificado'}\n"
-        f"👤 **Perfil**: {tipo_perfil or 'No especificado'}\n"
-        f"📞 **Preferencia**: {preferencia_contacto or 'No especificada'}"
+        f"¡Hola! Completé el formulario y me gustaría obtener más información sobre tu negocio.\n\n"
+        f"¿Ya cuentas con un terreno o lote propio?: {estado_terreno or 'Sí, ya tengo lote'}\n"
+        f"Full name: {first_name} {last_name or ''}\n"
+        f"¿Cuándo te gustaría visitar nuestro showroom en Armenia?: {asistencia_presencial or 'Esta semana'}\n"
+        f"Email: {raw_email or 'No provisto'}\n"
+        f"¿Cuál es el propósito principal de tu proyecto?: {proposito_proyecto or 'Vivienda Propia o Campestre'}\n"
+        f"¿Te contactas como Persona Natural o Empresa?: {tipo_perfil or 'Persona Natural'}\n"
+        f"Phone number: {phone}"
     )
 
     db_form_msg = Message(
