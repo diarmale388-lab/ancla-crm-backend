@@ -75,7 +75,8 @@ def get_available_slots(
 
     is_presencial = False
     if contact.scheduling_state:
-        is_presencial = "PRESENCIAL" in contact.scheduling_state.upper()
+        st = contact.scheduling_state.upper()
+        is_presencial = "PRESENCIAL" in st or "SHOWROOM" in st or "VISITA" in st
 
     for i in range(1, 8):  # Próximos 7 días
         day_date = today + timedelta(days=i)
@@ -366,12 +367,9 @@ async def update_appointment(
     if not appointment:
         raise HTTPException(status_code=404, detail="Cita no encontrada")
 
-    if "appointment_type" in payload:
-        appointment.appointment_type = payload["appointment_type"]
-    elif "modality" in payload:
-        appointment.appointment_type = payload["modality"]
-    elif "type" in payload:
-        appointment.appointment_type = payload["type"]
+    appt_type = payload.get("appointment_type") or payload.get("modality") or payload.get("type")
+    if appt_type:
+        appointment.appointment_type = appt_type
 
     if "datetime" in payload and payload["datetime"]:
         if isinstance(payload["datetime"], str):
