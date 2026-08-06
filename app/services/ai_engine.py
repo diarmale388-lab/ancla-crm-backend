@@ -386,6 +386,18 @@ class AIEngine:
                     )
                 }
 
+            # SI ES UN SALUDO SIMPLE U ORGÁNICO (ej: "Hola", "Buenas", "Información")
+            if msg_lower in ["hola", "buenas", "buenos dias", "buenas tardes", "buenas noches", "hola!", "hola, quiero información", "informacion", "información"]:
+                c_fn = contact.first_name or "cliente"
+                return {
+                    "response": (
+                        f"¡Hola {c_fn}! 🏠✨ Gracias por comunicarte con **ANCLA Special Projects**.\n\n"
+                        f"Con mucho gusto te brindamos información sobre nuestras soluciones de arquitectura modular (**Flex Home** y **Cápsula Living**).\n\n"
+                        f"🌱 **Para orientarte mejor**: ¿Cuentas actualmente con terreno / lote propio o estás en búsqueda y en qué ciudad o municipio proyectas construir?\n\n"
+                        f"Cuéntame, **¿qué inquietudes tienes o cuál de nuestros modelos te llama más la atención?** 💬✨"
+                    )
+                }
+
             # PASO 0: DETECCIÓN PRIORITARIA DE INTENCIONES ESPECÍFICAS DE PREGUNTA
             explicit_virtual_phrases = [
                 "puedo virtual", "no puedo presencial", "no estoy en armenia", "estoy en otra ciudad", "estoy fuera", 
