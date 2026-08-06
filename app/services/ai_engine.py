@@ -1732,13 +1732,52 @@ class AIEngine:
         return "Hola, con mucho gusto te ayudamos con tu consulta sobre ANCLA Special Projects. ¿Me darías más detalles?"
 
     def _heuristic_autopilot(self, contact: Any, last_message: str) -> str:
-        name = (contact.first_name if (contact and hasattr(contact, 'first_name')) else str(contact)) or "cliente"
-        notes = (contact.qualification_notes if (contact and hasattr(contact, 'qualification_notes')) else "") or ""
+        name = (contact.first_name if (contact and hasattr(contact, 'first_name')) else str(contact)) or ""
+        fn_str = f" {name}" if name and not name.startswith("+") and name.lower() not in ["cliente", "estimado cliente"] else ""
+        msg_lower = (last_message or "").lower().strip()
+        
+        pure_greetings = ["hola", "buenas", "buenos dias", "buenas tardes", "buenas noches", "hola!", "hola buenas tardes", "hola como estan", "hola como esta", "buenas tardes como estan", "buenas tardes como esta", "hola buenas tardes como estan", "como estan", "como esta"]
+
+        # 1. Saludo Humano Social Cortés
+        if any(msg_lower == g for g in pure_greetings) or ("como est" in msg_lower and len(msg_lower) < 40) or (msg_lower.startswith("hola") and len(msg_lower) < 25 and not any(k in msg_lower for k in ["precio", "costo", "lote", "informacion", "información", "catálogo", "catalogo", "ubicad", "donde"])):
+            if fn_str:
+                return (
+                    f"¡Hola{fn_str}! 👋 Buenas tardes, muy bien gracias por preguntar. 😊\n\n"
+                    f"Cuéntame, ¿en qué te podemos colaborar el día de hoy o qué proyecto tienes en mente?"
+                )
+            else:
+                return (
+                    "¡Hola! 👋 Buenas tardes, muy bien gracias por preguntar. 😊\n\n"
+                    "Te habla Sofía de **ANCLA Special Projects**. ¿Con quién tengo el gusto de hablar y en qué te podemos ayudar el día de hoy?"
+                )
+
+        # 2. Ubicación y Contacto
+        if any(w in msg_lower for w in ["donde estan ubicados", "dónde están ubicados", "donde quedan", "dónde quedan", "donde comunicarse", "dónde comunicarse", "donde los encuentro", "como me comunico", "cómo me comunico", "canales de contacto", "donde estan", "dónde están"]):
+            return (
+                f"¡Hola{fn_str}! 📍 Con mucho gusto te compartimos nuestros datos de ubicación y canales de atención:\n\n"
+                f"🏢 **Showroom Armenia**: Av. Centenario, frente a Pan y Miel (Armenia, Quindío).\n"
+                f"⏰ **Horario de atención**: Lunes a Sábado (9:00 AM a 5:00 PM).\n"
+                f"📍 **GPS Google Maps**: https://maps.google.com/?q=4.5616751,-75.6455612\n\n"
+                f"📲 **Canales de Comunicación**:\n"
+                f"• Directamente por este chat de WhatsApp 💬\n"
+                f"• Directora Comercial: **Liliana León**\n\n"
+                f"Cuéntame, **¿te gustaría coordinar una Visita Presencial en nuestro Showroom de Armenia o prefieres una Asesoría Virtual / Llamada Comercial?** 💬✨"
+            )
+
+        # 3. Interés General
+        if any(w in msg_lower for w in ["me gusta lo que ofrecen", "quiero mas informacion", "quiero más información", "mas informacion", "más información", "quiero saber mas", "quiero saber más", "me interesa su negocio"]):
+            return (
+                f"¡Hola{fn_str}! 🏠✨ ¡Qué alegría que te gusten nuestras soluciones de arquitectura modular!\n\n"
+                f"En **ANCLA Special Projects** diseñamos y fabricamos la línea **Flex Home** (casas expandibles de 36m², 56m² y 72m² con 2 habitaciones, sala, comedor y cocina) y la **Cápsula Living** (suite moderna ideal para hospedaje o residencia).\n\n"
+                f"🌱 **Para orientarte mejor**: ¿Cuentas actualmente con terreno / lote propio o estás en búsqueda y en qué ciudad o municipio proyectas construir?\n\n"
+                f"Cuéntame, **¿qué inquietudes tienes o cuál de nuestros modelos te llama más la atención?** 💬✨"
+            )
+
+        # Default fallback
         lot_st = (contact.lot_status if (contact and hasattr(contact, 'lot_status')) else None) or ""
         lot_ct = (contact.lot_city if (contact and hasattr(contact, 'lot_city')) else None) or ""
-        msg = last_message.lower()
         
-        greeting = f"¡Hola {name}! 🏠✨ "
+        greeting = f"¡Hola{fn_str}! 🏠✨ "
 
         # Pregunta / Confirmación sobre Lote Propio (Igual a Meta Ads)
         if lot_st == "Lote Propio":
