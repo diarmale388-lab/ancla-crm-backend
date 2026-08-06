@@ -769,14 +769,14 @@ class AIEngine:
                 }
 
             if any(w in msg_lower for w in ["btn_mode_virtual", "btn_mode_virtual_org", "btn_mode_virtual_arm", "btn_mode_virtual_per", "asesoría virtual", "asesoria virtual", "llamada virtual", "modalidad virtual"]):
-                contact.scheduling_state = "AWAITING_DAY"
+                contact.scheduling_state = "AWAITING_DAY:VIRTUAL"
                 db.add(contact)
                 db.commit()
                 days_list_str = get_dynamic_days_list()
                 return {
                     "response": (
                         f"¡Con mucho gusto, {c_name}! 💻✨ Registramos tu solicitud para **Asesoría Virtual (Google Meet / Zoom o Llamada Telefónica)**.\n\n"
-                        f"Selecciona el día de tu preferencia para coordinar tu sesión personalizada (15 min):\n\n"
+                        f"Selecciona a continuación el día para coordinar tu atención personalizada (15 min):\n\n"
                         f"{days_list_str}\n\n"
                         f"¿Qué día prefieres para coordinar tu atención?"
                     )
