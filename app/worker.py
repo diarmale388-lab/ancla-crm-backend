@@ -341,20 +341,34 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
             date_iso = (dt_mod.date.today() + dt_mod.timedelta(days=5)).strftime('%Y-%m-%d')
 
         if not reply_id.startswith("time_"):
-            if "09:30" in content_lower or "9:30" in content_lower:
-                time_str = "09:30"
-            elif "10:30" in content_lower or "10:30" in content_lower:
-                time_str = "10:30"
-            elif "10:00" in content_lower or "10" in content_lower:
-                time_str = "10:00"
-            elif "11:30" in content_lower or "11:30" in content_lower:
-                time_str = "11:30"
-            elif "11:00" in content_lower or "11" in content_lower:
-                time_str = "11:00"
-            elif "02:30" in content_lower or "2:30" in content_lower or "14:30" in content_lower:
+            import re
+            time_match = re.search(r'\b(0?[1-9]|1[0-6]):([0-5][0-9])\b', content_lower)
+            if time_match:
+                hr = int(time_match.group(1))
+                mn = time_match.group(2)
+                if ("pm" in content_lower or "tarde" in content_lower) and hr < 12:
+                    hr += 12
+                time_str = f"{hr:02d}:{mn}"
+            elif any(w in content_lower for w in ["4:00", "04:00", "16:00", "4pm", "4 pm"]):
+                time_str = "16:00"
+            elif any(w in content_lower for w in ["3:30", "03:30", "15:30"]):
+                time_str = "15:30"
+            elif any(w in content_lower for w in ["3:00", "03:00", "15:00"]):
+                time_str = "15:00"
+            elif any(w in content_lower for w in ["2:30", "02:30", "14:30"]):
                 time_str = "14:30"
-            elif "02:00" in content_lower or "2:00" in content_lower or "14:00" in content_lower or "2" in content_lower:
+            elif any(w in content_lower for w in ["2:00", "02:00", "14:00"]):
                 time_str = "14:00"
+            elif any(w in content_lower for w in ["11:30"]):
+                time_str = "11:30"
+            elif any(w in content_lower for w in ["11:00"]):
+                time_str = "11:00"
+            elif any(w in content_lower for w in ["10:30"]):
+                time_str = "10:30"
+            elif any(w in content_lower for w in ["10:00"]):
+                time_str = "10:00"
+            elif any(w in content_lower for w in ["9:30", "09:30"]):
+                time_str = "09:30"
 
         import datetime as dt_mod
         full_dt_str = f"{date_iso} {time_str}:00"
