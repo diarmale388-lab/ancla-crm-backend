@@ -361,15 +361,37 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
         full_dt = dt_mod.datetime.strptime(full_dt_str, "%Y-%m-%d %H:%M:%S")
 
         from app.models.base import Appointment, LeadActivityLog, PipelineStage
-        appt = db.query(Appointment).filter(
-            Appointment.contact_id == contact.id,
-            Appointment.status == "CONFIRMED"
-        ).first()
-
+        
         days_es = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
         months_es = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
         formatted_day_str = f"{days_es[full_dt.weekday()]} {full_dt.day} de {months_es[full_dt.month]}"
         formatted_time_str = full_dt.strftime("%I:%M %p").lstrip('0')
+
+        # VALIDACIÓN DE SOBRE-AGENDA / OVERBOOKING DE OTRO CLIENTE
+        existing_collision = db.query(Appointment).filter(
+            Appointment.datetime == full_dt,
+            Appointment.status == "CONFIRMED",
+            Appointment.appointment_type == modality,
+            Appointment.contact_id != contact.id
+        ).first()
+
+        if existing_collision:
+            logger.warning(f"Conflicto de sobre-agenda detectado para {full_dt_str} ({modality}). Slot ocupado por contacto #{existing_collision.contact_id}.")
+            busy_reply = (
+                f"¡Hola {name}! 🗓️ El turno de las **{formatted_time_str}** para el **{formatted_day_str}** "
+                f"acaba de ser reservado por otro cliente.\n\n"
+                f"Por favor selecciona otro de nuestros horarios disponibles para tu {'Visita Presencial' if modality == 'PRESENCIAL' else 'Asesoría Virtual'}:"
+            )
+            contact.scheduling_state = f"AWAITING_TIME:{date_iso}:{modality}"
+            db.add(contact)
+            db.commit()
+            await whatsapp_service.send_text_message(to_phone=from_phone, message_text=busy_reply, db=db)
+            return True
+
+        appt = db.query(Appointment).filter(
+            Appointment.contact_id == contact.id,
+            Appointment.status == "CONFIRMED"
+        ).first()
 
         assigned_uid = contact.assigned_user_id or 1
         if not appt:
@@ -478,7 +500,8 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
         if not date_iso:
             import re
             import datetime as dt_mod
-            now_dt = dt_mod.datetime.now()
+            colombia_now = dt_mod.datetime.utcnow() - dt_mod.timedelta(hours=5)
+            now_dt = colombia_now
             
             # 1. Obtener los 6 días disponibles reales partiendo de mañana (excluyendo domingos)
             available_dates = []
@@ -589,9 +612,10 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
             db.commit()
 
             import datetime as dt_mod
-            now_date = dt_mod.date.today()
+            colombia_now = dt_mod.datetime.utcnow() - dt_mod.timedelta(hours=5)
+            now_date = colombia_now.date()
             days_es = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-            months_es = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+            months_es_short = ['', 'Ene.', 'Feb.', 'Mar.', 'Abr.', 'May.', 'Jun.', 'Jul.', 'Ago.', 'Sep.', 'Oct.', 'Nov.', 'Dic.']
 
             this_week_rows = []
             next_week_rows = []
@@ -601,7 +625,7 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
                 if d.weekday() == 6:
                     continue
                 day_name = days_es[d.weekday()]
-                month_name = months_es[d.month]
+                month_name = months_es_short[d.month]
                 title_str = f"{day_name} {d.day} de {month_name}"[:24]
                 row_item = {
                     "id": f"day_{d.strftime('%Y-%m-%d')}_{modality}",
@@ -916,9 +940,10 @@ async def process_whatsapp_message(ctx, payload: dict):
             db.commit()
 
             import datetime as dt_mod
-            now_date = dt_mod.date.today()
+            colombia_now = dt_mod.datetime.utcnow() - dt_mod.timedelta(hours=5)
+            now_date = colombia_now.date()
             days_es = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-            months_es = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+            months_es_short = ['', 'Ene.', 'Feb.', 'Mar.', 'Abr.', 'May.', 'Jun.', 'Jul.', 'Ago.', 'Sep.', 'Oct.', 'Nov.', 'Dic.']
 
             this_week_rows = []
             next_week_rows = []
@@ -928,7 +953,7 @@ async def process_whatsapp_message(ctx, payload: dict):
                 if d.weekday() == 6:
                     continue
                 day_name = days_es[d.weekday()]
-                month_name = months_es[d.month]
+                month_name = months_es_short[d.month]
                 title_str = f"{day_name} {d.day} de {month_name}"[:24]
                 row_item = {
                     "id": f"day_{d.strftime('%Y-%m-%d')}_{modality}",
