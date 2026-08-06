@@ -190,7 +190,7 @@ async def transcribe_whatsapp_audio(file_bytes: bytes, mime_type: str, db: Sessi
         # Mime type por defecto para notas de voz en WhatsApp es audio/ogg
         clean_mime = mime_type.split(";")[0] if mime_type else "audio/ogg"
         
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
         payload = {
             "contents": [
                 {
@@ -880,7 +880,7 @@ async def process_whatsapp_message(ctx, payload: dict):
 
         # 7. Evaluar Botones Interactivos de Confirmación y Reagendamiento (Prioridad Alta sobre Flujo Genérico)
         content_lower = (content or "").lower()
-        if button_reply_id == "btn_confirm_appt" or "confirmar asistencia" in content_lower or "confirmar" in content_lower:
+        if button_reply_id in ["btn_confirm_appt", "btn_confirm_slot", "btn_confirm"] or "confirmar asistencia" in content_lower or "sí, confirmar" in content_lower or "si, confirmar" in content_lower or "confirmar" in content_lower:
             name = f"{contact.first_name or ''}".strip() or "estimado cliente"
             confirm_reply = (
                 f"¡Excelente, {name}! 👏✨ Tu asistencia ha sido reconfirmada.\n\n"
