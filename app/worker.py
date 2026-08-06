@@ -878,16 +878,7 @@ async def process_whatsapp_message(ctx, payload: dict):
             )
             return
 
-        # 7. Evaluar Máquina de Estados de Agendamiento de Citas (Presencial & Virtual)
-        try:
-            from app.worker import handle_whatsapp_scheduling_flow
-            handled = await handle_whatsapp_scheduling_flow(db, contact, content, button_reply_id, from_phone)
-            if handled:
-                return
-        except Exception as sched_err:
-            logger.error(f"Error en flujo de agendamiento WhatsApp: {sched_err}")
-
-        # 7.5 Evaluar Botones Interactivos de Confirmación y Reagendamiento (2 Botones Estrictos)
+        # 7. Evaluar Botones Interactivos de Confirmación y Reagendamiento (Prioridad Alta sobre Flujo Genérico)
         content_lower = (content or "").lower()
         if button_reply_id == "btn_confirm_appt" or "confirmar asistencia" in content_lower or "confirmar" in content_lower:
             name = f"{contact.first_name or ''}".strip() or "estimado cliente"
@@ -917,6 +908,15 @@ async def process_whatsapp_message(ctx, payload: dict):
             )
             await whatsapp_service.send_text_message(to_phone=from_phone, message_text=reagenda_reply, db=db)
             return
+
+        # 7.5 Evaluar Máquina de Estados de Agendamiento de Citas (Presencial & Virtual)
+        try:
+            from app.worker import handle_whatsapp_scheduling_flow
+            handled = await handle_whatsapp_scheduling_flow(db, contact, content, button_reply_id, from_phone)
+            if handled:
+                return
+        except Exception as sched_err:
+            logger.error(f"Error en flujo de agendamiento WhatsApp: {sched_err}")
 
         # 8. Evaluar Respuestas a Botones de Habeas Data
         if button_reply_id == "habeas_accept":
