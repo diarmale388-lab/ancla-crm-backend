@@ -447,7 +447,12 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
 
     if is_day_selection and not reply_id.startswith("time_"):
         date_iso = None
-        modality = "PRESENCIAL"
+        
+        # Determinar modalidad resolviendo notas y origen del contacto para evitar sobreescribir VIRTUAL a PRESENCIAL
+        notes_str = (contact.qualification_notes or "").lower()
+        source_str = (contact.source or "").lower()
+        modality = "VIRTUAL" if any(w in notes_str or w in source_str for w in ["virtual", "llamada", "zoom", "meet"]) else "PRESENCIAL"
+
         if reply_id.startswith("day_"):
             parts = reply_id.split("_")
             if len(parts) >= 2:
@@ -561,8 +566,8 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
 
     # --- PASO 1: SELECCIÓN DE MODALIDAD (Presencial vs Virtual) ---
     if not reply_id.startswith("time_") and not reply_id.startswith("day_"):
-        is_presencial_click = reply_id == "btn_presencial" or "visita presencial" in content_lower
-        is_virtual_click = reply_id in ["btn_virt_yes", "btn_virt_info", "btn_virtual", "btn_confirm_tomorrow"] or "asesoria virtual" in content_lower or "asesoría virtual" in content_lower
+        is_presencial_click = reply_id in ["btn_presencial", "btn_mode_presencial_org", "btn_mode_presencial_arm", "btn_mode_presencial_per"] or "visita presencial" in content_lower or "presencial" in content_lower
+        is_virtual_click = reply_id in ["btn_virt_yes", "btn_virt_info", "btn_virtual", "btn_mode_virtual_org", "btn_mode_virtual_arm", "btn_mode_virtual_per", "btn_confirm_tomorrow"] or "asesoria virtual" in content_lower or "asesoría virtual" in content_lower or "virtual" in content_lower or "llamada" in content_lower
 
         if is_presencial_click or is_virtual_click:
             modality = "PRESENCIAL" if is_presencial_click else "VIRTUAL"
