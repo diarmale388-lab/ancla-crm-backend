@@ -513,6 +513,13 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
                 if len(available_dates) == 6:
                     break
 
+            # 1.5 REGLA DE AGENDAMIENTO PARA HOY ("Hoy", "Hoy en la tarde") CON 3 HORAS DE ANTELACIÓN
+            if "hoy" in content_lower:
+                if now_dt.hour < 13 and now_dt.weekday() != 6:
+                    date_iso = now_dt.strftime('%Y-%m-%d')
+                else:
+                    date_iso = available_dates[0]
+
             # 2. Verificar si el usuario escribió un número de opción (ej: "1", "el 1", "opcion 1")
             num_match = re.search(r'\b([1-6])\b', content_lower)
             if num_match:
