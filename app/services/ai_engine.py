@@ -389,21 +389,51 @@ class AIEngine:
             # SI ES UN SALUDO SIMPLE U ORGÁNICO HUMANO (ej: "Hola buenas tardes, ¿cómo están?")
             pure_greetings = ["hola", "buenas", "buenos dias", "buenas tardes", "buenas noches", "hola!", "hola buenas tardes", "hola como estan", "hola como esta", "buenas tardes como estan", "buenas tardes como esta", "hola buenas tardes como estan", "como estan", "como esta"]
 
-            if any(msg_lower.strip() == g for g in pure_greetings) or ("como est" in msg_lower and len(msg_lower) < 40) or (msg_lower.startswith("hola") and len(msg_lower) < 25 and not any(k in msg_lower for k in ["precio", "costo", "lote", "informacion", "catálogo", "catalogo"])):
+            if any(msg_lower.strip() == g for g in pure_greetings) or ("como est" in msg_lower and len(msg_lower) < 40) or (msg_lower.startswith("hola") and len(msg_lower) < 25 and not any(k in msg_lower for k in ["precio", "costo", "lote", "informacion", "información", "catálogo", "catalogo", "ubicad", "donde"])):
                 if contact.first_name and not contact.first_name.startswith("+") and contact.first_name.lower() not in ["cliente", "estimado cliente"]:
                     return {
                         "response": (
-                            f"¡Hola {contact.first_name}! 👋 Buenas tardes, muy bien gracias a Dios. 😊\n\n"
+                            f"¡Hola {contact.first_name}! 👋 Buenas tardes, muy bien gracias por preguntar. 😊\n\n"
                             f"Cuéntame, ¿en qué te podemos colaborar el día de hoy o qué proyecto tienes en mente?"
                         )
                     }
                 else:
                     return {
                         "response": (
-                            "¡Hola! 👋 Buenas tardes, muy bien gracias a Dios. 😊\n\n"
+                            "¡Hola! 👋 Buenas tardes, muy bien gracias por preguntar. 😊\n\n"
                             "Te habla Sofía de **ANCLA Special Projects**. ¿Con quién tengo el gusto de hablar y en qué te podemos ayudar el día de hoy?"
                         )
                     }
+
+            # DETECCIÓN EXPLÍCITA DE PREGUNTA POR UBICACIÓN Y CANALES DE COMUNICACIÓN
+            if any(w in msg_lower for w in ["donde estan ubicados", "dónde están ubicados", "donde quedan", "dónde quedan", "donde comunicarse", "dónde comunicarse", "donde los encuentro", "como me comunico", "cómo me comunico", "canales de contacto", "donde estan", "dónde están"]):
+                c_name = contact.first_name or ""
+                fn_str = f" {c_name}" if c_name and not c_name.startswith("+") else ""
+                return {
+                    "response": (
+                        f"¡Hola{fn_str}! 📍 Con mucho gusto te compartimos nuestros datos de ubicación y canales de atención:\n\n"
+                        f"🏢 **Showroom Armenia**: Av. Centenario, frente a Pan y Miel (Armenia, Quindío).\n"
+                        f"⏰ **Horario de atención**: Lunes a Sábado (9:00 AM a 5:00 PM).\n"
+                        f"📍 **GPS Google Maps**: https://maps.google.com/?q=4.5616751,-75.6455612\n\n"
+                        f"📲 **Canales de Comunicación**:\n"
+                        f"• Directamente por este chat de WhatsApp 💬\n"
+                        f"• Directora Comercial: **Liliana León**\n\n"
+                        f"Cuéntame, **¿te gustaría coordinar una Visita Presencial en nuestro Showroom de Armenia o prefieres una Asesoría Virtual / Llamada Comercial?** 💬✨"
+                    )
+                }
+
+            # DETECCIÓN EXPLÍCITA DE INTERÉS GENERAL (ej: "Hola, me gusta lo que ofrecen, quiero más información")
+            if any(w in msg_lower for w in ["me gusta lo que ofrecen", "quiero mas informacion", "quiero más información", "mas informacion", "más información", "quiero saber mas", "quiero saber más", "me interesa su negocio"]):
+                c_name = contact.first_name or ""
+                fn_str = f" {c_name}" if c_name and not c_name.startswith("+") else ""
+                return {
+                    "response": (
+                        f"¡Hola{fn_str}! 🏠✨ ¡Qué alegría que te gusten nuestras soluciones de arquitectura modular!\n\n"
+                        f"En **ANCLA Special Projects** diseñamos y fabricamos la línea **Flex Home** (casas expandibles de 36m², 56m² y 72m² con 2 habitaciones, sala, comedor y cocina) y la **Cápsula Living** (suite moderna ideal para hospedaje o residencia).\n\n"
+                        f"🌱 **Para orientarte mejor**: ¿Cuentas actualmente con terreno / lote propio o estás en búsqueda y en qué ciudad o municipio proyectas construir?\n\n"
+                        f"Cuéntame, **¿qué inquietudes tienes o cuál de nuestros modelos te llama más la atención?** 💬✨"
+                    )
+                }
 
             # PASO 0: DETECCIÓN PRIORITARIA DE INTENCIONES ESPECÍFICAS DE PREGUNTA
             explicit_virtual_phrases = [
