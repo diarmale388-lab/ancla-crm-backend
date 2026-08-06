@@ -71,7 +71,8 @@ def get_available_slots(
 
     # Generar slots según tipo de cita (PRESENCIAL vs VIRTUAL/LLAMADA) y día de la semana
     slots = []
-    current_time = datetime.utcnow()
+    colombia_now = datetime.utcnow() - timedelta(hours=5)
+    current_time = colombia_now
 
     is_presencial = False
     if contact.scheduling_state:

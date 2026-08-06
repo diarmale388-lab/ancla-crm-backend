@@ -343,32 +343,40 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
         if not reply_id.startswith("time_"):
             import re
             time_match = re.search(r'\b(0?[1-9]|1[0-6]):([0-5][0-9])\b', content_lower)
+            hour_alone_match = re.search(r'\b(?:a las|las|a la)?\s*(1[0-2]|0?[1-9])(?:\s*(?:de la|en la)?\s*(tarde|mañana|pm|am))?\b', content_lower)
+
             if time_match:
                 hr = int(time_match.group(1))
                 mn = time_match.group(2)
                 if ("pm" in content_lower or "tarde" in content_lower) and hr < 12:
                     hr += 12
                 time_str = f"{hr:02d}:{mn}"
-            elif any(w in content_lower for w in ["4:00", "04:00", "16:00", "4pm", "4 pm"]):
+            elif any(w in content_lower for w in ["4:00", "04:00", "16:00", "4pm", "4 pm", "4 de la tarde", "las 4"]):
                 time_str = "16:00"
-            elif any(w in content_lower for w in ["3:30", "03:30", "15:30"]):
+            elif any(w in content_lower for w in ["3:30", "03:30", "15:30", "3 y media"]):
                 time_str = "15:30"
-            elif any(w in content_lower for w in ["3:00", "03:00", "15:00"]):
+            elif any(w in content_lower for w in ["3:00", "03:00", "15:00", "3pm", "3 pm", "3 de la tarde", "las 3"]):
                 time_str = "15:00"
-            elif any(w in content_lower for w in ["2:30", "02:30", "14:30"]):
+            elif any(w in content_lower for w in ["2:30", "02:30", "14:30", "2 y media"]):
                 time_str = "14:30"
-            elif any(w in content_lower for w in ["2:00", "02:00", "14:00"]):
+            elif any(w in content_lower for w in ["2:00", "02:00", "14:00", "2pm", "2 pm", "2 de la tarde", "las 2"]):
                 time_str = "14:00"
             elif any(w in content_lower for w in ["11:30"]):
                 time_str = "11:30"
-            elif any(w in content_lower for w in ["11:00"]):
+            elif any(w in content_lower for w in ["11:00", "11am", "11 am", "las 11"]):
                 time_str = "11:00"
             elif any(w in content_lower for w in ["10:30"]):
                 time_str = "10:30"
-            elif any(w in content_lower for w in ["10:00"]):
+            elif any(w in content_lower for w in ["10:00", "10am", "10 am", "las 10"]):
                 time_str = "10:00"
             elif any(w in content_lower for w in ["9:30", "09:30"]):
                 time_str = "09:30"
+            elif hour_alone_match:
+                hr_val = int(hour_alone_match.group(1))
+                is_pm = "tarde" in content_lower or "pm" in content_lower
+                if is_pm and hr_val < 12:
+                    hr_val += 12
+                time_str = f"{hr_val:02d}:00"
 
         import datetime as dt_mod
         full_dt_str = f"{date_iso} {time_str}:00"
@@ -1593,13 +1601,103 @@ async def appointment_2h_reminder_cron_job(ctx):
     finally:
         db.close()
 
+async def appointment_24h_reminder_cron_job(ctx):
+    """
+    Tarea cron para enviar un recordatorio 24h antes de la cita.
+    REGLA: Únicamente se envía si la cita fue reservada con MÁS de 24 horas de antelación
+    ((datetime - created_at) > 86400 segundos). Si fue agendada en las últimas 24h, se omite.
+    """
+    db = SessionLocal()
+    try:
+        import datetime as dt_mod
+        colombia_now = dt_mod.datetime.utcnow() - dt_mod.timedelta(hours=5)
+        window_start = colombia_now + dt_mod.timedelta(hours=23)
+        window_end = colombia_now + dt_mod.timedelta(hours=25)
+        
+        upcoming_appts = db.query(Appointment).filter(
+            Appointment.status == "CONFIRMED",
+            Appointment.datetime >= window_start,
+            Appointment.datetime <= window_end
+        ).all()
+        
+        for appt in upcoming_appts:
+            contact = db.query(Contact).filter(Contact.id == appt.contact_id).first()
+            if not contact or not contact.phone:
+                continue
+
+            # REGLA EXPLICITA: Si la cita se creó dentro de las últimas 24h previas a la fecha del compromiso, NO enviar 24h reminder
+            if appt.created_at and (appt.datetime - appt.created_at).total_seconds() <= 86400:
+                logger.info(f"Omite recordatorio 24h para cita #{appt.id}: fue agendada dentro de las 24h previas.")
+                continue
+                
+            recent_reminder = db.query(Message).filter(
+                Message.contact_id == contact.id,
+                Message.sender_type == SenderType.AI,
+                Message.content.ilike("%Mañana es el gran día%")
+            ).first()
+            
+            if recent_reminder:
+                continue
+                
+            time_str = appt.datetime.strftime("%I:%M %p").lstrip('0')
+            is_presencial = (appt.appointment_type or "").upper() == "PRESENCIAL"
+            name = contact.first_name or "Estimado cliente"
+            
+            days_es = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+            months_es = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+            formatted_date = f"{days_es[appt.datetime.weekday()]} {appt.datetime.day} de {months_es[appt.datetime.month]}"
+
+            if is_presencial:
+                msg_body = (
+                    f"¡Hola {name}! 🏡✨ Mañana es el gran día (**{formatted_date}** a las **{time_str}**) "
+                    f"para tu **Visita Presencial en nuestro Showroom de Armenia** (Av. Centenario, frente a Pan y Miel).\n\n"
+                    f"¿Nos confirmas tu asistencia para reservar la atención de nuestro asesor?"
+                )
+            else:
+                msg_body = (
+                    f"¡Hola {name}! 💻✨ Mañana es el gran día (**{formatted_date}** a las **{time_str}**) "
+                    f"para tu **Asesoría Virtual (Google Meet / Llamada)** con nuestro equipo de ANCLA Special Projects.\n\n"
+                    f"¿Nos confirmas tu disponibilidad para la sesión?"
+                )
+
+            buttons = [
+                {"id": "btn_confirm_slot", "title": "✅ Sí, confirmo"},
+                {"id": "btn_time_other", "title": "📅 Reagendar"}
+            ]
+
+            await whatsapp_service.send_interactive_buttons(
+                to_phone=contact.phone,
+                body_text=msg_body,
+                buttons=buttons,
+                header_text="ANCLA Special Projects",
+                footer_text="Confirmación Cita VIP",
+                db=db
+            )
+
+            db_msg = Message(
+                contact_id=contact.id,
+                sender_type=SenderType.AI,
+                channel=ChannelType.WHATSAPP,
+                message_type=MessageType.TEXT,
+                content=msg_body,
+                status=MessageStatus.SENT
+            )
+            db.add(db_msg)
+            db.commit()
+    except Exception as e:
+        logger.error(f"Error en appointment_24h_reminder_cron_job: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
 class WorkerSettings:
     """Configuración que lee arq para lanzar el Worker"""
-    functions = [process_whatsapp_message, crm_daily_backup_job, autopilot_sweeper_job, morning_8am_broadcast_job, appointment_2h_reminder_cron_job]
+    functions = [process_whatsapp_message, crm_daily_backup_job, autopilot_sweeper_job, morning_8am_broadcast_job, appointment_2h_reminder_cron_job, appointment_24h_reminder_cron_job]
     cron_jobs = [
         cron(crm_daily_backup_job, hour=0, minute=0), # Todos los días a la medianoche
         cron(autopilot_sweeper_job, minute=set(range(60))), # Se ejecuta cada minuto automáticamente (0% sobrecarga)
         cron(appointment_2h_reminder_cron_job, minute=set(range(0, 60, 15))), # Cada 15 minutos
+        cron(appointment_24h_reminder_cron_job, minute=set(range(0, 60, 30))), # Cada 30 minutos
         cron(morning_8am_broadcast_job, hour=13, minute=0, day=29, month=7) # 8:00 AM Hora Colombia (13:00 UTC) Miércoles 29 de Julio
     ]
     redis_settings = redis_settings
