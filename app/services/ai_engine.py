@@ -1663,10 +1663,8 @@ class AIEngine:
 
         opts_text = (
             f"{lot_callout}"
-            "Ofrecemos dos modalidades de atención personalizada para presentarte todos los detalles y opciones:\n\n"
-            "1️⃣ **Visita Presencial en Showroom Armenia** (Av. Centenario, frente a Pan y Miel — Lunes a Sábado).\n"
-            "2️⃣ **Asesoría Virtual / Llamada Comercial** (Ideal si estás en otra ciudad o prefieres llamada de asesoría).\n\n"
-            "¿Qué modalidad prefieres para coordinar tu atención?"
+            "Cuéntame, **¿qué inquietudes tienes o cuál de nuestros modelos te llama más la atención para tu proyecto?** 💬✨\n\n"
+            "Podemos resolver todas tus dudas directamente por este medio, o si en cualquier momento prefieres una atención guiada, podemos coordinar una **Visita Presencial en nuestro Showroom de Armenia** o una **Asesoría Virtual / Llamada Comercial**."
         )
 
         if "precio" in msg or "cuesta" in msg or "valor" in msg or "cotiz" in msg:
