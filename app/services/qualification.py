@@ -89,7 +89,7 @@ def analyze_and_qualify_lead(db: Session, contact: Contact, message_text: str) -
         payload = {}
         if is_openrouter:
             payload = {
-                "model": "google/gemini-2.5-flash",
+                "model": os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat"),
                 "messages": [
                     {"role": "system", "content": system_instruction},
                     {"role": "user", "content": message_text}

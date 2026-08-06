@@ -225,7 +225,7 @@ class AIEngine:
                 except Exception as e:
                     logger.warning(f"Fallo en OpenRouter {model_name} en llamada directa: {e}")
         else:
-            for mod_name in ["gemini-2.5-flash", "gemini-1.5-flash"]:
+            for mod_name in ["gemini-1.5-flash", "gemini-2.0-flash"]:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod_name}:generateContent?key={api_key}"
                 payload = {
                     "contents": [{"parts": [{"text": prompt}]}],
@@ -1427,7 +1427,7 @@ class AIEngine:
         payload = {}
         if is_openrouter:
             payload = {
-                "model": "google/gemini-2.5-flash",
+                "model": os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat"),
                 "messages": [
                     {"role": "system", "content": system_instruction},
                     {"role": "user", "content": reply}
