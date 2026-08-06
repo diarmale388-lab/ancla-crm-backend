@@ -50,19 +50,20 @@ class AIEngine:
         return "\n".join(lines)
 
     def get_dynamic_showroom_options(self, is_virtual: bool = False) -> str:
+        days_str = self.get_dynamic_days_list()
         if is_virtual:
             return (
-                "¡Hola! 🏠✨ Gracias por registrarte en ANCLA Special Projects.\n\n"
-                "Hemos recibido tu solicitud para coordinar tu **Asesoría Virtual (Google Meet / Zoom o Llamada Telefónica)**.\n\n"
-                "Disponemos de horarios diurnos de **Lunes a Viernes (10:00 AM - 12:00 PM y 2:00 PM - 4:30 PM)** y **Sábados (10:00 AM - 12:00 PM)**.\n\n"
-                "¿Qué día y jornada te queda más cómodo para agendar tu espacio exclusivo?"
+                "¡Con mucho gusto! 💻✨ Registramos tu solicitud para **Asesoría Virtual (Google Meet / Zoom o Llamada Telefónica)**.\n\n"
+                "Selecciona a continuación el día para coordinar tu atención personalizada de 15 minutos:\n\n"
+                f"{days_str}\n\n"
+                "¿Qué día prefieres para coordinar tu atención?"
             )
             
         return (
-            "¡Hola! 🏠✨ Gracias por escribir a **ANCLA Special Projects**.\n\n"
-            "Te invitamos a conocer nuestras casas modulares exhibidas (Flex Home y Cápsula Living). Ofrecemos dos modalidades de atención personalizada:\n\n"
-            "1️⃣ **Visita Presencial en Showroom Armenia** (Av. Centenario, frente a Pan y Miel — Lunes a Viernes: 9:30 AM a 12:00 PM y 2:00 PM a 4:00 PM, máx 2 citas por hora).\n"
-            "2️⃣ **Asesoría Virtual / Llamada Comercial** (Ideal si estás en otra ciudad o prefieres llamada de asesoría).\n\n"
+            "¡Con mucho gusto! 🏠✨ Te invitamos a conocer nuestras casas modulares exhibidas (**Flex Home** y **Cápsula Living**).\n\n"
+            "Ofrecemos dos modalidades de atención personalizada:\n"
+            "1️⃣ **Visita Presencial en Showroom Armenia** (Av. Centenario, frente a Pan y Miel).\n"
+            "2️⃣ **Asesoría Virtual / Llamada Comercial**.\n\n"
             "📍 **GPS Google Maps**: https://maps.google.com/?q=4.5616751,-75.6455612\n\n"
             "¿Qué modalidad prefieres para coordinar tu atención?"
         )
@@ -807,12 +808,16 @@ class AIEngine:
                         f"Por último, coméntanos: **¿Cuentas actualmente con un terreno o lote propio?**"
                     )
 
+                contact.scheduling_state = "AWAITING_DAY"
+                db.add(contact)
+                db.commit()
+                days_list_str = get_dynamic_days_list()
                 return {
                     "response": (
-                        f"¡Hola {contact.first_name or ''}! 👋 Te informamos que debido a la Gran Inauguración de nuestro Showroom en Armenia, las asesorías virtuales y llamadas de esta semana se encuentran a **capacidad máxima (cupos 100% agotados)**. 🏡✨\n\n"
-                        f"🌟 ¡No te preocupes! Has quedado registrado con prioridad en nuestra **Lista de Espera VIP**.\n\n"
-                        f"El día **Jueves 30 de Julio** nuestro **asesor especialista en proyectos modulares** se comunicará directamente contigo por este medio para agendar la fecha y hora exacta de tu asesoría virtual para la próxima semana.\n\n"
-                        f"{data_prompt}"
+                        f"¡Con mucho gusto, {contact.first_name or ''}! 💻✨ Registramos tu solicitud para **Asesoría Virtual (Google Meet / Zoom o Llamada Telefónica)**.\n\n"
+                        f"Selecciona a continuación el día para coordinar tu atención personalizada de 15 minutos:\n\n"
+                        f"{days_list_str}\n\n"
+                        f"¿Qué día prefieres para coordinar tu atención?"
                     )
                 }
 
@@ -853,12 +858,16 @@ class AIEngine:
 
             # Si el cliente es de la Lista de Espera VIP (Ruta B / Otra región), NO enviar invitación presencial
             if is_virtual_lead:
+                contact.scheduling_state = "AWAITING_DAY"
+                db.add(contact)
+                db.commit()
+                days_list_str = get_dynamic_days_list()
                 return {
                     "response": (
-                        f"¡Hola {contact.first_name or ''}! 👋 Gracias por registrarte en ANCLA Special Projects. 🏡✨\n\n"
-                        f"Hemos notado que te encuentras fuera de la región o no podrás asistir presencialmente a nuestro Showroom en Armenia.\n\n"
-                        f"🌟 ¡No te preocupes! Has quedado registrado en nuestra **Lista de Espera VIP** para atención personalizada virtual a partir del **Jueves 30 de Julio**.\n\n"
-                        f"¿Te gustaría que vayamos agendando tu **Asesoría Virtual (Llamada 📞 / Google Meet 💻)** con nuestro **asesor especialista en proyectos modulares**?"
+                        f"¡Con mucho gusto, {contact.first_name or ''}! 💻✨ Registramos tu solicitud para **Asesoría Virtual (Google Meet / Zoom o Llamada Telefónica)**.\n\n"
+                        f"Selecciona a continuación el día para coordinar tu atención personalizada de 15 minutos:\n\n"
+                        f"{days_list_str}\n\n"
+                        f"¿Qué día prefieres para coordinar tu atención?"
                     )
                 }
 
