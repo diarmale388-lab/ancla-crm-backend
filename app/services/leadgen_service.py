@@ -280,16 +280,14 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
         city_str = f" en **{target_region}**" if target_region else ""
         lot_str = f"registramos que cuentas con terreno propio{city_str}" if contact.lot_status == "Lote Propio" or "si" in str(asistencia_presencial).lower() or "tengo" in str(asistencia_presencial).lower() else "registramos tu proyecto"
 
+        from app.services.ai_engine import ai_engine
+        days_list_str = ai_engine.get_dynamic_days_list()
+
         msg_ruta_b = (
             f"¡Hola {first_name}! 🏠✨ Gracias por registrarte en **ANCLA Special Projects**.\n\n"
             f"Hemos recibido tu solicitud completada: {lot_str} y seleccionaste **{pref_display}**.\n\n"
             f"Selecciona a continuación el día para coordinar tu atención personalizada (15 min):\n\n"
-            f"• **1️⃣ Lunes 10 de Agosto**\n"
-            f"• **2️⃣ Martes 11 de Agosto**\n"
-            f"• **3️⃣ Miércoles 12 de Agosto**\n"
-            f"• **4️⃣ Jueves 13 de Agosto**\n"
-            f"• **5️⃣ Viernes 14 de Agosto**\n"
-            f"• **6️⃣ Sábado 15 de Agosto**\n\n"
+            f"{days_list_str}\n\n"
             f"¿Qué día prefieres para coordinar tu atención?"
         )
         buttons_b = [

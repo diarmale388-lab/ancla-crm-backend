@@ -27,6 +27,28 @@ class AIEngine:
             return db_key.value
         return self.api_key
 
+    def get_dynamic_days_list(self) -> str:
+        import datetime as dt
+        now = dt.datetime.now()
+        days_es = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+        months_es = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+        
+        lines = []
+        num = 1
+        for i in range(1, 8):
+            target_date = now + dt.timedelta(days=i)
+            if target_date.weekday() == 6: # Skip Sunday
+                continue
+            if num > 6:
+                break
+            day_name = days_es[target_date.weekday()]
+            month_name = months_es[target_date.month]
+            rel_label = " (Mañana)" if i == 1 else ""
+            lines.append(f"• **{num}️⃣ {day_name} {target_date.day} de {month_name}{rel_label}**")
+            num += 1
+            
+        return "\n".join(lines)
+
     def get_dynamic_showroom_options(self, is_virtual: bool = False) -> str:
         if is_virtual:
             return (
@@ -685,17 +707,13 @@ class AIEngine:
                 contact.scheduling_state = "AWAITING_DAY"
                 db.add(contact)
                 db.commit()
+                days_list_str = get_dynamic_days_list()
                 return {
                     "response": (
                         f"¡Excelente elección, {c_name}! 🏠✨ Con gusto coordinamos tu **Visita Presencial en nuestro Showroom de Armenia** (Av. Centenario, frente a Pan y Miel).\n\n"
                         f"📍 **GPS Google Maps**: https://maps.google.com/?q=4.5616751,-75.6455612\n\n"
                         f"Selecciona a continuación el día de tu preferencia para reservar tu espacio exclusivo (atención de Lunes a Sábado):\n\n"
-                        f"• **1️⃣ Lunes 10 de Agosto**\n"
-                        f"• **2️⃣ Martes 11 de Agosto**\n"
-                        f"• **3️⃣ Miércoles 12 de Agosto**\n"
-                        f"• **4️⃣ Jueves 13 de Agosto**\n"
-                        f"• **5️⃣ Viernes 14 de Agosto**\n"
-                        f"• **6️⃣ Sábado 15 de Agosto**\n\n"
+                        f"{days_list_str}\n\n"
                         f"¿Qué día prefieres para coordinar tu visita?"
                     )
                 }
@@ -704,16 +722,12 @@ class AIEngine:
                 contact.scheduling_state = "AWAITING_DAY"
                 db.add(contact)
                 db.commit()
+                days_list_str = get_dynamic_days_list()
                 return {
                     "response": (
                         f"¡Con mucho gusto, {c_name}! 💻✨ Registramos tu solicitud para **Asesoría Virtual (Google Meet / Zoom o Llamada Telefónica)**.\n\n"
                         f"Selecciona el día de tu preferencia para coordinar tu sesión personalizada (15 min):\n\n"
-                        f"• **1️⃣ Lunes 10 de Agosto**\n"
-                        f"• **2️⃣ Martes 11 de Agosto**\n"
-                        f"• **3️⃣ Miércoles 12 de Agosto**\n"
-                        f"• **4️⃣ Jueves 13 de Agosto**\n"
-                        f"• **5️⃣ Viernes 14 de Agosto**\n"
-                        f"• **6️⃣ Sábado 15 de Agosto**\n\n"
+                        f"{days_list_str}\n\n"
                         f"¿Qué día prefieres para coordinar tu atención?"
                     )
                 }
