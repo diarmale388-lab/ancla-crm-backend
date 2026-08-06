@@ -15,8 +15,8 @@ class AIEngine:
     def __init__(self):
         # API Key por defecto de las variables de entorno
         self.api_key = settings.GEMINI_API_KEY
-        self.model = "gemini-3.5-flash"
-        self.api_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
+        self.model = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat")
+        self.api_url = "https://openrouter.ai/api/v1/chat/completions"
 
     def _get_api_key(self, db: Session) -> Optional[str]:
         """
@@ -223,7 +223,7 @@ class AIEngine:
                 except Exception as e:
                     logger.warning(f"Fallo en OpenRouter {model_name} en llamada directa: {e}")
         else:
-            for mod_name in ["gemini-1.5-flash", "gemini-2.0-flash"]:
+            for mod_name in ["gemini-2.5-flash", "gemini-2.0-flash"]:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod_name}:generateContent?key={api_key}"
                 payload = {
                     "contents": [{"parts": [{"text": prompt}]}],
@@ -378,10 +378,9 @@ class AIEngine:
 
                 return {
                     "response": (
-                        f"¡Hola {c_fn}! 🏠✨ Gracias por registrarte en **ANCLA Special Projects**.\n\n"
-                        f"Hemos recibido tu formulario completado: {lot_str} y seleccionaste **{pref_mod}**.\n\n"
-                        f"Disponemos de horarios diurnos de Lunes a Sábado para tu atención exclusiva (10:00 AM - 12:00 PM y 02:00 PM - 04:30 PM).\n\n"
-                        f"¿Qué día y horario te queda más cómodo para coordinar tu atención?"
+                        f"¡Hola {c_fn}! 🏠✨ Gracias por comunicarte con **ANCLA Special Projects**.\n\n"
+                        f"Con mucho gusto te ayudamos a coordinar tu **{pref_mod}**.\n\n"
+                        f"¿Qué día te queda más cómodo para agendar tu atención exclusiva?"
                     )
                 }
 

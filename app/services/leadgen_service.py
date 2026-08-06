@@ -277,37 +277,12 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
         elif "visita" in pref_lower or "presencial" in pref_lower:
             pref_display = "Visita Presencial en Showroom Armenia"
 
-        city_str = f" en **{target_region}**" if target_region else ""
-        lot_str = f"registramos que cuentas con terreno propio{city_str}" if contact.lot_status == "Lote Propio" or "si" in str(asistencia_presencial).lower() or "tengo" in str(asistencia_presencial).lower() else "registramos tu proyecto"
-
-        from app.services.ai_engine import ai_engine
-        days_list_str = ai_engine.get_dynamic_days_list()
-
-        msg_ruta_b = (
-            f"¡Hola {first_name}! 🏠✨ Gracias por registrarte en **ANCLA Special Projects**.\n\n"
-            f"Hemos recibido tu solicitud completada: {lot_str} y seleccionaste **{pref_display}**.\n\n"
-            f"Selecciona a continuación el día para coordinar tu atención personalizada (15 min):\n\n"
-            f"{days_list_str}\n\n"
-            f"¿Qué día prefieres para coordinar tu atención?"
+        from app.worker import handle_whatsapp_scheduling_flow
+        handled = await handle_whatsapp_scheduling_flow(
+            db, contact, content="📞 Asesoría Virtual", button_reply_id="btn_mode_virtual", from_phone=contact.phone
         )
-        buttons_b = [
-            {"id": "btn_virt_yes", "title": "🗓️ Ver días libres"},
-            {"id": "btn_virt_info", "title": "🏡 Ver modelos Flex"},
-            {"id": "btn_contact_liliana", "title": "📲 Hablar con Liliana"}
-        ]
-
-        db_msg = Message(
-            contact_id=contact.id,
-            sender_type=SenderType.AI,
-            channel=ChannelType.WHATSAPP,
-            message_type=MessageType.TEXT,
-            content=msg_ruta_b,
-            status=MessageStatus.SENT
-        )
-        db.add(db_msg)
-        db.commit()
-
-        try:
+        if handled:
+            return
             await whatsapp_service.send_interactive_buttons(
                 to_phone=contact.phone,
                 body_text=msg_ruta_b,
