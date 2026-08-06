@@ -339,14 +339,21 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
             import datetime as dt_mod
             date_iso = (dt_mod.date.today() + dt_mod.timedelta(days=5)).strftime('%Y-%m-%d')
 
-        if "09:30" in content_lower or "9:30" in content_lower:
-            time_str = "09:30"
-        elif "10:00" in content_lower or "10" in content_lower:
-            time_str = "10:00"
-        elif "11:00" in content_lower or "11" in content_lower:
-            time_str = "11:00"
-        elif "02:00" in content_lower or "2:00" in content_lower or "14:00" in content_lower or "2" in content_lower:
-            time_str = "14:00"
+        if not reply_id.startswith("time_"):
+            if "09:30" in content_lower or "9:30" in content_lower:
+                time_str = "09:30"
+            elif "10:30" in content_lower or "10:30" in content_lower:
+                time_str = "10:30"
+            elif "10:00" in content_lower or "10" in content_lower:
+                time_str = "10:00"
+            elif "11:30" in content_lower or "11:30" in content_lower:
+                time_str = "11:30"
+            elif "11:00" in content_lower or "11" in content_lower:
+                time_str = "11:00"
+            elif "02:30" in content_lower or "2:30" in content_lower or "14:30" in content_lower:
+                time_str = "14:30"
+            elif "02:00" in content_lower or "2:00" in content_lower or "14:00" in content_lower or "2" in content_lower:
+                time_str = "14:00"
 
         import datetime as dt_mod
         full_dt_str = f"{date_iso} {time_str}:00"
