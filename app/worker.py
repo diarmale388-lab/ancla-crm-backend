@@ -917,7 +917,7 @@ async def process_whatsapp_message(ctx, payload: dict):
 
         # 7. Evaluar Botones Interactivos de Confirmación y Reagendamiento (Prioridad Alta sobre Flujo Genérico)
         content_lower = (content or "").lower()
-        if button_reply_id in ["btn_confirm_appt", "btn_confirm_slot", "btn_confirm"] or "confirmar asistencia" in content_lower or "sí, confirmar" in content_lower or "si, confirmar" in content_lower or "confirmar" in content_lower:
+        if button_reply_id in ["btn_confirm_appt", "btn_confirm_slot"] or "confirmar asistencia" in content_lower:
             name = f"{contact.first_name or ''}".strip() or "estimado cliente"
             confirm_reply = (
                 f"¡Excelente, {name}! 👏✨ Tu asistencia ha sido reconfirmada.\n\n"
