@@ -73,7 +73,9 @@ def get_available_slots(
     slots = []
     current_time = datetime.utcnow()
 
-    is_presencial = contact.source and any(w in contact.source.lower() for w in ["showroom", "local", "armenia", "presencial"])
+    is_presencial = False
+    if contact.scheduling_state:
+        is_presencial = "PRESENCIAL" in contact.scheduling_state.upper()
 
     for i in range(1, 8):  # Próximos 7 días
         day_date = today + timedelta(days=i)
