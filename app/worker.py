@@ -888,6 +888,7 @@ async def process_whatsapp_message(ctx, payload: dict):
             logger.error(f"Error en flujo de agendamiento WhatsApp: {sched_err}")
 
         # 7.5 Evaluar Botones Interactivos de Confirmación y Reagendamiento (2 Botones Estrictos)
+        content_lower = (content or "").lower()
         if button_reply_id == "btn_confirm_appt" or "confirmar asistencia" in content_lower or "confirmar" in content_lower:
             name = f"{contact.first_name or ''}".strip() or "estimado cliente"
             confirm_reply = (
