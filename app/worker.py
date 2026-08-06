@@ -893,20 +893,61 @@ async def process_whatsapp_message(ctx, payload: dict):
 
         if button_reply_id == "btn_reagenda_appt" or "reagendar cita" in content_lower or "reagendar" in content_lower:
             name = f"{contact.first_name or ''}".strip() or "estimado cliente"
-            contact.scheduling_state = "AWAITING_DAY"
+            
+            notes_str = (contact.qualification_notes or "").lower()
+            source_str = (contact.source or "").lower()
+            modality = "VIRTUAL" if any(w in notes_str or w in source_str for w in ["virtual", "llamada", "zoom", "meet"]) else "PRESENCIAL"
+            
+            contact.scheduling_state = f"AWAITING_DAY:{modality}"
             db.add(contact)
             db.commit()
 
-            from app.services.ai_engine import ai_engine
-            dynamic_days = ai_engine.get_dynamic_days_list()
+            import datetime as dt_mod
+            now_date = dt_mod.date.today()
+            days_es = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+            months_es = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
-            reagenda_reply = (
+            this_week_rows = []
+            next_week_rows = []
+
+            for i in range(1, 14):
+                d = now_date + dt_mod.timedelta(days=i)
+                if d.weekday() == 6:
+                    continue
+                day_name = days_es[d.weekday()]
+                month_name = months_es[d.month]
+                title_str = f"{day_name} {d.day} de {month_name}"
+                row_item = {
+                    "id": f"day_{d.strftime('%Y-%m-%d')}_{modality}",
+                    "title": title_str,
+                    "description": f"Cupos disponibles para {modality.lower()}"
+                }
+                if i <= 3:
+                    this_week_rows.append(row_item)
+                else:
+                    next_week_rows.append(row_item)
+
+            sections = []
+            if this_week_rows:
+                sections.append({"title": "📅 Esta Semana", "rows": this_week_rows[:4]})
+            if next_week_rows:
+                sections.append({"title": "🗓️ Próxima Semana", "rows": next_week_rows[:5]})
+
+            body_txt = (
                 f"¡No te preocupes, {name}! 🗓️ Entendemos que se presentan inconvenientes. Hemos liberado tu cupo anterior.\n\n"
-                f"Selecciona a continuación el nuevo día de tu preferencia para coordinar tu atención personalizada (15 min):\n\n"
-                f"{dynamic_days}\n\n"
-                f"¿Qué día prefieres para coordinar tu nueva atención?"
+                f"Para tu **{'Visita Presencial en Showroom Armenia' if modality == 'PRESENCIAL' else 'Asesoría Virtual (Google Meet / Zoom)'}**, "
+                "por favor abre el menú desplegable a continuación y selecciona el nuevo día de tu preferencia:"
             )
-            await whatsapp_service.send_text_message(to_phone=from_phone, message_text=reagenda_reply, db=db)
+
+            await whatsapp_service.send_interactive_list(
+                to_phone=from_phone,
+                body_text=body_txt,
+                button_text="📅 Seleccionar Día",
+                sections=sections,
+                header_text="ANCLA Special Projects",
+                footer_text="Selecciona un día de la lista",
+                db=db
+            )
             return
 
         # 7.5 Evaluar Máquina de Estados de Agendamiento de Citas (Presencial & Virtual)
