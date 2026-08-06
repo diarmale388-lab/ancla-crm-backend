@@ -454,7 +454,7 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
     is_modality_button = reply_id in ["btn_presencial", "btn_virtual", "btn_mode_presencial", "btn_mode_virtual", "btn_mode_presencial_org", "btn_mode_presencial_arm", "btn_mode_presencial_per", "btn_mode_virtual_org", "btn_mode_virtual_arm", "btn_mode_virtual_per"]
     is_day_selection = not is_modality_button and (
         reply_id.startswith("day_") or 
-        any(w in content_lower for w in ["lunes", "martes", "miércoles", "miercoles", "jueves", "viernes", "sábado", "sabado"]) or
+        any(w in content_lower for w in ["lunes", "martes", "miércoles", "miercoles", "jueves", "viernes", "sábado", "sabado", "mañana", "manana", "hoy"]) or
         ((contact.scheduling_state or "").startswith("AWAITING_DAY") and any(n in content_lower.split() for n in ["1", "2", "3", "4", "5", "6"]))
     )
 
