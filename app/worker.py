@@ -186,46 +186,47 @@ async def transcribe_whatsapp_audio(file_bytes: bytes, mime_type: str, db: Sessi
 
         # 2. Formatear y preparar el payload multimodal para Gemini
         base64_audio = base64.b64encode(file_bytes).decode('utf-8')
-        
-        # Mime type por defecto para notas de voz en WhatsApp es audio/ogg
         clean_mime = mime_type.split(";")[0] if mime_type else "audio/ogg"
         
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-        payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": (
-                                "Por favor, transcribe esta nota de voz a texto en español de forma precisa y directa. "
-                                "Devuelve ÚNICAMENTE la transcripción limpia sin comentarios tuyos, saludos ni aclaraciones."
-                            )
-                        },
-                        {
-                            "inlineData": {
-                                "mimeType": clean_mime,
-                                "data": base64_audio
+        # Probar primero con Gemini 2.0 Flash (el modelo de voz más reciente) y luego fallback a 1.5 Flash
+        for model_name in ["gemini-2.0-flash", "gemini-1.5-flash"]:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+            payload = {
+                "contents": [
+                    {
+                        "parts": [
+                            {
+                                "text": (
+                                    "Por favor, transcribe esta nota de voz a texto en español de forma precisa y directa. "
+                                    "Devuelve ÚNICAMENTE la transcripción limpia sin comentarios tuyos, saludos ni aclaraciones."
+                                )
+                            },
+                            {
+                                "inlineData": {
+                                    "mimeType": clean_mime,
+                                    "data": base64_audio
+                                }
                             }
-                        }
-                    ]
+                        ]
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.0
                 }
-            ],
-            "generationConfig": {
-                "temperature": 0.0
             }
-        }
-        
-        # 3. Consultar la API
-        async with httpx.AsyncClient() as client:
-            res = await client.post(url, json=payload, timeout=25.0)
-            if res.status_code == 200:
-                data = res.json()
-                transcription = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                logger.info(f"Transcripción exitosa del audio: '{transcription[:50]}...'")
-                return transcription
-            else:
-                logger.error(f"Error llamando a Gemini transcripción (status {res.status_code}): {res.text}")
-                return None
+            
+            # 3. Consultar la API
+            async with httpx.AsyncClient() as client:
+                res = await client.post(url, json=payload, timeout=25.0)
+                if res.status_code == 200:
+                    data = res.json()
+                    transcription = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                    logger.info(f"Transcripción exitosa con {model_name}: '{transcription[:50]}...'")
+                    return transcription
+                else:
+                    logger.warning(f"Respuesta no exitosa con {model_name} (status {res.status_code}): {res.text}")
+                    
+        return None
                 
     except Exception as e:
         logger.error(f"Excepción en la transcripción de audio: {e}")
