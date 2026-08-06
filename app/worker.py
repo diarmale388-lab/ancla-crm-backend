@@ -944,13 +944,38 @@ async def process_whatsapp_message(ctx, payload: dict):
             )
             return
 
-        # 7. Evaluar Botones Interactivos de Confirmación y Reagendamiento (Prioridad Alta sobre Flujo Genérico)
-        content_lower = (content or "").lower()
+        # 7. Evaluar Solicitud de Hablar con Liliana León (Escalación Manual de Atención)
+        if button_reply_id in ["btn_contact_liliana", "btn_liliana"] or any(w in content_lower for w in ["hablar con liliana", "hablar con liliana león", "hablar con liliana leon", "contactar a liliana", "comunicar con liliana"]):
+            name = f"{contact.first_name or ''}".strip() or "estimado cliente"
+            liliana_msg = (
+                f"¡Entendido, {name}! 📲✨ En aproximadamente 15 minutos nuestra Directora Comercial **Liliana León** "
+                f"se comunicará directamente contigo al número (+{contact.phone}) para atender tus inquietudes personalmente.\n\n"
+                f"¡Muchas gracias por tu interés en ANCLA Special Projects! 🏡🤝"
+            )
+            contact.chatbot_enabled = False
+            db.add(contact)
+            db.commit()
+            
+            db_lili_msg = Message(
+                contact_id=contact.id,
+                sender_type=SenderType.AI,
+                channel=ChannelType.WHATSAPP,
+                message_type=MessageType.TEXT,
+                content=liliana_msg,
+                status=MessageStatus.SENT
+            )
+            db.add(db_lili_msg)
+            db.commit()
+            
+            await whatsapp_service.send_text_message(to_phone=from_phone, message_text=liliana_msg, db=db)
+            return
+
+        # 7.2 Evaluar Botones Interactivos de Confirmación y Reagendamiento (Prioridad Alta sobre Flujo Genérico)
         if button_reply_id in ["btn_confirm_appt", "btn_confirm_slot"] or "confirmar asistencia" in content_lower:
             name = f"{contact.first_name or ''}".strip() or "estimado cliente"
             confirm_reply = (
                 f"¡Excelente, {name}! 👏✨ Tu asistencia ha sido reconfirmada.\n\n"
-                f"Tu cupo exclusivo con nuestra Directora Comercial **Liliana León** está 100% reservado. ¡Nos vemos en breve! 🏡🤝\n\n"
+                f"Tu cita con nuestro equipo de **ANCLA Special Projects** está 100% reservada. ¡Nos vemos en breve! 🏡🤝\n\n"
                 f"📍 **Showroom Armenia**: Av. Centenario, frente a Pan y Miel.\n"
                 f"📍 **GPS Google Maps**: https://maps.google.com/?q=4.5616751,-75.6455612"
             )
