@@ -293,7 +293,7 @@ class AIEngine:
             from app.services.activity import record_activity
 
             # AUTO-EXTRACCIÓN DE PERFIL Y RUTA DESDE EL FORMULARIO DE META ADS
-            is_form_submission = bool(msg and ("completé el formulario" in msg_lower or "full name:" in msg_lower or "lead ads" in msg_lower))
+            is_form_submission = bool(msg and ("full name:" in msg_lower or "completé el formulario de meta" in msg_lower or "lead ads payload" in msg_lower))
 
             if msg and ("full name:" in msg_lower or "completé el formulario" in msg_lower):
                 import re
@@ -315,13 +315,13 @@ class AIEngine:
                 db.add(contact)
                 db.commit()
 
-            # SI ES UN FORMULARIO DE META O PRIMER MENSAJE, SIEMPRE OFRECER AMBAS MODALIDADES CON BOTONES
+            # SI ES UN FORMULARIO AUTOMÁTICO DE META ADS REAL, ENRUTAR A CITAS
             if is_form_submission:
                 c_fn = contact.first_name or "cliente"
                 return {
                     "response": (
                         f"¡Hola {c_fn}! 🏠✨ Gracias por registrarte en **ANCLA Special Projects**.\n\n"
-                        f"Te invitamos a conocer nuestras casas modulares exhibidas (Flex Home y Cápsula Linvig). Ofrecemos dos modalidades de atención personalizada:\n\n"
+                        f"Te invitamos a conocer nuestras casas modulares exhibidas (Flex Home y Cápsula Living). Ofrecemos dos modalidades de atención personalizada:\n\n"
                         f"1️⃣ **Visita Presencial en Showroom Armenia** (Av. Centenario, frente a Pan y Miel — Lunes a Sábado: 10:00 AM a 12:00 PM y 02:00 PM a 04:00 PM, máx 2 citas por hora).\n"
                         f"2️⃣ **Asesoría Virtual / Llamada Comercial** (Ideal si estás en otra ciudad o prefieres llamada de asesoría).\n\n"
                         f"📍 **GPS Google Maps**: https://maps.google.com/?q=4.5616751,-75.6455612\n\n"
@@ -1628,33 +1628,45 @@ class AIEngine:
         is_vip = "[LISTA_ESPERA_VIP]" in notes or "virtual" in notes.lower() or "fuera" in notes.lower()
         msg = last_message.lower()
         
-        # 1. Saludo y respuestas a dudas técnicas del catálogo de ANCLA
-        opts_text = self.get_dynamic_showroom_options(is_vip)
+        greeting = f"¡Hola {name}! 🏠✨ "
+        opts_text = (
+            "Ofrecemos dos modalidades de atención personalizada para presentarte todos los detalles y opciones:\n\n"
+            "1️⃣ **Visita Presencial en Showroom Armenia** (Av. Centenario, frente a Pan y Miel — Lunes a Sábado).\n"
+            "2️⃣ **Asesoría Virtual / Llamada Comercial** (Ideal si estás en otra ciudad o prefieres llamada de asesoría).\n\n"
+            "¿Qué modalidad prefieres para coordinar tu atención?"
+        )
+
         if "precio" in msg or "cuesta" in msg or "valor" in msg or "cotiz" in msg:
-            return f"¡Hola {name}! Como todas nuestras soluciones modulares (Flex Home y Cápsula Linvig) se configuran a la medida de tu proyecto, los valores exactos y planos te los presentamos detalladamente. {opts_text}"
+            return f"{greeting}Como nuestras soluciones modulares (**Flex Home** y **Cápsula Living**) se configuran a la medida de tu proyecto y terreno, los precios exactos y planos te los presentamos detalladamente en tu sesión. {opts_text}"
             
         elif "baño" in msg or "baño completo" in msg or "ducha" in msg or "inodoro" in msg:
-            return f"¡Hola {name}! Sí, la Capsula Linvig y la FLEX HOME vienen equipadas con un baño 100% completo y listo para habitar: incluye lavamanos con mueble, espejo, ducha con mampara corrediza en vidrio templado, inodoro y grifería de alta calidad."
+            return f"{greeting}Sí, nuestras casas modulares vienen equipadas con baño 100% completo: incluye lavamanos con mueble, espejo, ducha con mampara en vidrio templado e inodoro de alta calidad.\n\n{opts_text}"
 
         elif "aislamiento" in msg or "aislante" in msg or "frío" in msg or "frio" in msg or "ruido" in msg or "acústico" in msg:
-            return f"¡Hola {name}! Así es, los muros exteriores utilizan paneles tipo sándwich con lámina de acero galvanizado y núcleo con aislamiento térmico y acústico. Esto asegura un confort climático óptimo en cualquier zona."
+            return f"{greeting}Nuestros muros utilizan paneles tipo sándwich con lámina de acero galvanizado y aislamiento termoacústico con lana de roca. Esto asegura un confort térmico y acústico superior en cualquier clima.\n\n{opts_text}"
 
         elif "habitación" in msg or "habitaciones" in msg or "cuartos" in msg:
-            return f"¡Hola {name}! La Casa Expandible FLEX HOME cuenta con 2 habitaciones cómodas y una excelente distribución interior, mientras que la Capsula Linvig es un módulo tipo suite de 1 habitación ideal para parejas."
+            return f"{greeting}La **Flex Home** cuenta con 2 habitaciones amplias y excelente distribución interior, mientras que la **Cápsula Living** es un módulo tipo suite ideal para suite de descanso o glamping.\n\n{opts_text}"
 
         elif "cocina" in msg or "cocineta" in msg:
-            return f"¡Hola {name}! La cocina viene 100% instalada e incluye muebles superiores e inferiores en acabado blanco, mesón de trabajo, lavaplatos en acero inoxidable, grifería y espacio para electrodomésticos."
+            return f"{greeting}La cocina viene 100% instalada: incluye muebles superiores e inferiores, mesón de trabajo, lavaplatos en acero inoxidable y grifería de lujo.\n\n{opts_text}"
 
         elif "dimensión" in msg or "dimensiones" in msg or "medida" in msg or "tamaño" in msg:
-            if "cápsula" in msg or "capsula" in msg or "linvig" in msg:
-                return f"¡Hola {name}! La Capsula Linvig tiene un largo exterior de 5.80 m, un ancho de 2.23 m y una altura interior útil de 2.40 m (13 m² totales de área habitacional)."
-            return f"¡Hola {name}! La FLEX HOME tiene unas dimensiones de 6.28 m de ancho, 5.70 m de largo y una altura de 2.90 m, cubriendo 56 m² en su distribución expandida."
+            if "cápsula" in msg or "capsula" in msg or "linvig" in msg or "living" in msg:
+                return f"{greeting}La **Cápsula Living** tiene un área habitacional de 28m² (tipo suite moderna de alta gama).\n\n{opts_text}"
+            return f"{greeting}La **Flex Home** está disponible en versiones expandibles de 36m², 56m² y 72m² con distribución de 2 habitaciones, sala, comedor y cocina.\n\n{opts_text}"
 
         elif "plano" in msg or "planos" in msg:
-            return f"¡Hola {name}! Sí, contamos con los planos detallados de distribución interior. {opts_text}"
+            return f"{greeting}Contamos con los planos arquitectónicos detallados y distribuciones en 3D. {opts_text}"
 
-        # Fallback genérico de saludo técnico adaptado a Showroom presencial o virtual
-        return f"¡Hola {name}! Gracias por escribir a ANCLA Special Projects. 🏠✨ {opts_text}"
+        # Duda general / Solicitud de información de casas modulares
+        return (
+            f"{greeting}Con mucho gusto te compartimos información sobre nuestras casas modulares exhibidas. "
+            f"Contamos con la línea **Flex Home** (modelos de 36m², 56m² y 72m² con 2 habitaciones, sala, comedor y cocina) "
+            f"y la **Cápsula Living** (suite moderna de alta gama ideal para hospedaje o residencia).\n\n"
+            f"Todas nuestras unidades están fabricadas con estructura en acero galvanizado, aislamiento termoacústico y acabados de lujo ready-to-move.\n\n"
+            f"{opts_text}"
+        )
 
     def _heuristic_ad_copy(self, product_description: str, tone: str) -> Dict[str, Any]:
         return {
