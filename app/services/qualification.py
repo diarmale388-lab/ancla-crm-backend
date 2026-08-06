@@ -73,7 +73,7 @@ def analyze_and_qualify_lead(db: Session, contact: Contact, message_text: str) -
         
     if api_key:
         is_openrouter = api_key.startswith("sk-or-v1")
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
         if is_openrouter:
             url = "https://openrouter.ai/api/v1/chat/completions"
             

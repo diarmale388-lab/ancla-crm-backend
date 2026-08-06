@@ -450,7 +450,7 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
         return True
 
     # --- PASO 2: SELECCIÓN DE DÍA (ej: "1", "2", "Lunes 10 de Agosto" o "day_2026-08-06_PRESENCIAL") ---
-    is_modality_button = reply_id in ["btn_presencial", "btn_virtual", "btn_mode_presencial_org", "btn_mode_presencial_arm", "btn_mode_presencial_per", "btn_mode_virtual_org", "btn_mode_virtual_arm", "btn_mode_virtual_per"]
+    is_modality_button = reply_id in ["btn_presencial", "btn_virtual", "btn_mode_presencial", "btn_mode_virtual", "btn_mode_presencial_org", "btn_mode_presencial_arm", "btn_mode_presencial_per", "btn_mode_virtual_org", "btn_mode_virtual_arm", "btn_mode_virtual_per"]
     is_day_selection = not is_modality_button and (reply_id.startswith("day_") or any(w in content_lower for w in ["lunes", "martes", "miércoles", "miercoles", "jueves", "viernes", "sábado", "sabado"]))
 
     if is_day_selection and not reply_id.startswith("time_"):
@@ -574,8 +574,8 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
 
     # --- PASO 1: SELECCIÓN DE MODALIDAD (Presencial vs Virtual) ---
     if not reply_id.startswith("time_") and not reply_id.startswith("day_"):
-        is_presencial_click = reply_id in ["btn_presencial", "btn_mode_presencial_org", "btn_mode_presencial_arm", "btn_mode_presencial_per"] or "visita presencial" in content_lower or "presencial" in content_lower
-        is_virtual_click = reply_id in ["btn_virt_yes", "btn_virt_info", "btn_virtual", "btn_mode_virtual_org", "btn_mode_virtual_arm", "btn_mode_virtual_per", "btn_confirm_tomorrow"] or "asesoria virtual" in content_lower or "asesoría virtual" in content_lower or "virtual" in content_lower or "llamada" in content_lower
+        is_presencial_click = reply_id in ["btn_presencial", "btn_mode_presencial", "btn_mode_presencial_org", "btn_mode_presencial_arm", "btn_mode_presencial_per"] or "visita presencial" in content_lower or "presencial" in content_lower
+        is_virtual_click = reply_id in ["btn_virt_yes", "btn_virt_info", "btn_virtual", "btn_mode_virtual", "btn_mode_virtual_org", "btn_mode_virtual_arm", "btn_mode_virtual_per", "btn_confirm_tomorrow"] or "asesoria virtual" in content_lower or "asesoría virtual" in content_lower or "virtual" in content_lower or "llamada" in content_lower
 
         if is_presencial_click or is_virtual_click:
             modality = "PRESENCIAL" if is_presencial_click else "VIRTUAL"
@@ -597,7 +597,7 @@ async def handle_whatsapp_scheduling_flow(db: Session, contact: Contact, content
                     continue
                 day_name = days_es[d.weekday()]
                 month_name = months_es[d.month]
-                title_str = f"{day_name} {d.day} de {month_name}"
+                title_str = f"{day_name} {d.day} de {month_name}"[:24]
                 row_item = {
                     "id": f"day_{d.strftime('%Y-%m-%d')}_{modality}",
                     "title": title_str,

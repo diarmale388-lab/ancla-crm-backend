@@ -130,7 +130,7 @@ class AIEngine:
         """
         Llama a Gemini a temperatura 0.0 para clasificar la intención en: CITAS, VENTAS, INFORMATIVO o HUMANO.
         """
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
         is_openrouter = api_key.startswith("sk-or-v1")
         if is_openrouter:
             url = "https://openrouter.ai/api/v1/chat/completions"
@@ -1176,11 +1176,13 @@ class AIEngine:
             contact = state["contact"]
             msg_lower = state["last_message"].lower().strip()
             
-            # Buscar si el cliente ya tiene una cita de asesoría confirmada
+            # Buscar si el cliente ya tiene una cita de asesoría confirmada futura
             from app.models.base import Appointment
+            from datetime import datetime as dt_now
             existing_app = db.query(Appointment).filter(
                 Appointment.contact_id == contact.id,
-                Appointment.status == "CONFIRMED"
+                Appointment.status == "CONFIRMED",
+                Appointment.datetime >= dt_now.utcnow()
             ).order_by(Appointment.created_at.desc()).first()
             
             if existing_app:
@@ -1409,7 +1411,7 @@ class AIEngine:
         if not api_key:
             return reply
             
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
         is_openrouter = api_key.startswith("sk-or-v1")
         if is_openrouter:
             url = "https://openrouter.ai/api/v1/chat/completions"
