@@ -887,8 +887,8 @@ async def process_whatsapp_message(ctx, payload: dict):
         except Exception as sched_err:
             logger.error(f"Error en flujo de agendamiento WhatsApp: {sched_err}")
 
-        # 7.5 Evaluar Botones Interactivos de Confirmación, Reagendamiento y Atención Humana
-        if button_reply_id == "btn_confirm_appt" or "confirmar asistencia" in content_lower:
+        # 7.5 Evaluar Botones Interactivos de Confirmación y Reagendamiento (2 Botones Estrictos)
+        if button_reply_id == "btn_confirm_appt" or "confirmar asistencia" in content_lower or "confirmar" in content_lower:
             name = f"{contact.first_name or ''}".strip() or "estimado cliente"
             confirm_reply = (
                 f"¡Excelente, {name}! 👏✨ Tu asistencia ha sido reconfirmada.\n\n"
@@ -915,20 +915,6 @@ async def process_whatsapp_message(ctx, payload: dict):
                 f"¿Qué día prefieres para coordinar tu nueva atención?"
             )
             await whatsapp_service.send_text_message(to_phone=from_phone, message_text=reagenda_reply, db=db)
-            return
-
-        if button_reply_id in ["btn_contact_liliana"] or "hablar con liliana" in content_lower:
-            name = f"{contact.first_name or ''}".strip() or "Estimado cliente"
-            logger.info(f"Usuario {from_phone} solicitó atención directa con Liliana. Pausando bot.")
-            contact.chatbot_enabled = False  # Handover a humano
-            db.add(contact)
-            db.commit()
-
-            handover_msg = (
-                f"¡Con mucho gusto, {name}! 📲\n\n"
-                "Hemos notificado directamente a **Liliana León** (Directora Comercial). En un instante tomará la conversación para atenderte de forma personalizada. 🤝✨"
-            )
-            await whatsapp_service.send_text_message(to_phone=from_phone, message_text=handover_msg, db=db)
             return
 
         # 8. Evaluar Respuestas a Botones de Habeas Data
