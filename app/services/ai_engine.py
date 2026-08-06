@@ -681,15 +681,22 @@ class AIEngine:
             is_virtual_lead = (contact.qualification_notes and "[LISTA_ESPERA_VIP]" in contact.qualification_notes) or any(w in msg_lower for w in explicit_virtual_phrases)
 
             # DETECCIÓN EXPLÍCITA DE SELECCIÓN DE MODALIDAD DESDE BOTONES INTERACTIVOS
-            if any(w in msg_lower for w in ["btn_mode_presencial", "btn_mode_presencial_org", "btn_mode_presencial_arm", "btn_mode_presencial_per", "visita presencial", "presencial"]):
+            if any(w in msg_lower for w in ["btn_mode_presencial", "btn_mode_presencial_org", "btn_mode_presencial_arm", "btn_mode_presencial_per", "visita presencial"]):
+                contact.scheduling_state = "AWAITING_DAY"
+                db.add(contact)
+                db.commit()
                 return {
                     "response": (
-                        f"¡Excelente elección, {c_name}! 🏠✨ Te esperamos en nuestro Showroom de Armenia (Av. Centenario, frente a Pan y Miel).\n\n"
+                        f"¡Excelente elección, {c_name}! 🏠✨ Con gusto coordinamos tu **Visita Presencial en nuestro Showroom de Armenia** (Av. Centenario, frente a Pan y Miel).\n\n"
                         f"📍 **GPS Google Maps**: https://maps.google.com/?q=4.5616751,-75.6455612\n\n"
-                        f"Contamos con los siguientes turnos de atención presencial de Lunes a Sábado (máximo 2 citas por hora para brindarte atención personalizada):\n\n"
-                        f"• **Jornada Mañana**: 10:00 AM a 01:00 PM (10:00 AM, 11:00 AM, 12:00 PM)\n"
-                        f"• **Jornada Tarde**: 02:00 PM a 05:00 PM (02:00 PM, 03:00 PM, 04:00 PM)\n\n"
-                        f"¿Qué día y hora de estos te queda mejor para reservar tu cupo exclusivo?"
+                        f"Selecciona a continuación el día de tu preferencia para reservar tu espacio exclusivo (atención de Lunes a Sábado):\n\n"
+                        f"• **1️⃣ Lunes 10 de Agosto**\n"
+                        f"• **2️⃣ Martes 11 de Agosto**\n"
+                        f"• **3️⃣ Miércoles 12 de Agosto**\n"
+                        f"• **4️⃣ Jueves 13 de Agosto**\n"
+                        f"• **5️⃣ Viernes 14 de Agosto**\n"
+                        f"• **6️⃣ Sábado 15 de Agosto**\n\n"
+                        f"¿Qué día prefieres para coordinar tu visita?"
                     )
                 }
 
