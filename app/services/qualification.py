@@ -1,4 +1,4 @@
-import logging
+import os, logging
 from sqlalchemy.orm import Session
 from app.models.base import Contact, PipelineStage
 from app.services.activity import record_activity
