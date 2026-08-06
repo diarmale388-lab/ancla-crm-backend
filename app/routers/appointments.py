@@ -368,10 +368,25 @@ async def update_appointment(
 
     if "appointment_type" in payload:
         appointment.appointment_type = payload["appointment_type"]
+    elif "modality" in payload:
+        appointment.appointment_type = payload["modality"]
+    elif "type" in payload:
+        appointment.appointment_type = payload["type"]
+
+    if "datetime" in payload and payload["datetime"]:
+        if isinstance(payload["datetime"], str):
+            from datetime import datetime as dt_class
+            dt_clean = payload["datetime"].replace("Z", "").split("+")[0]
+            appointment.datetime = dt_class.fromisoformat(dt_clean)
+        else:
+            appointment.datetime = payload["datetime"]
+
     if "notes" in payload:
         appointment.notes = payload["notes"]
     if "status" in payload:
         appointment.status = payload["status"]
+    if "user_id" in payload:
+        appointment.user_id = payload["user_id"]
 
     db.add(appointment)
     db.commit()
