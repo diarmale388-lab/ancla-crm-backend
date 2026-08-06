@@ -916,7 +916,7 @@ async def process_whatsapp_message(ctx, payload: dict):
                     continue
                 day_name = days_es[d.weekday()]
                 month_name = months_es[d.month]
-                title_str = f"{day_name} {d.day} de {month_name}"
+                title_str = f"{day_name} {d.day} de {month_name}"[:24]
                 row_item = {
                     "id": f"day_{d.strftime('%Y-%m-%d')}_{modality}",
                     "title": title_str,
