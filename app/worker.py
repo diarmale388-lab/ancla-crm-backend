@@ -887,8 +887,37 @@ async def process_whatsapp_message(ctx, payload: dict):
         except Exception as sched_err:
             logger.error(f"Error en flujo de agendamiento WhatsApp: {sched_err}")
 
-        # 7.5 Evaluar Botones Interactivos de Campaña Nacional y Atención Humana
-        if button_reply_id in ["btn_contact_liliana"]:
+        # 7.5 Evaluar Botones Interactivos de Confirmación, Reagendamiento y Atención Humana
+        if button_reply_id == "btn_confirm_appt" or "confirmar asistencia" in content_lower:
+            name = f"{contact.first_name or ''}".strip() or "estimado cliente"
+            confirm_reply = (
+                f"¡Excelente, {name}! 👏✨ Tu asistencia ha sido reconfirmada.\n\n"
+                f"Tu cupo exclusivo con nuestra Directora Comercial **Liliana León** está 100% reservado. ¡Nos vemos en breve! 🏡🤝\n\n"
+                f"📍 **Showroom Armenia**: Av. Centenario, frente a Pan y Miel.\n"
+                f"📍 **GPS Google Maps**: https://maps.google.com/?q=4.5616751,-75.6455612"
+            )
+            await whatsapp_service.send_text_message(to_phone=from_phone, message_text=confirm_reply, db=db)
+            return
+
+        if button_reply_id == "btn_reagenda_appt" or "reagendar cita" in content_lower or "reagendar" in content_lower:
+            name = f"{contact.first_name or ''}".strip() or "estimado cliente"
+            contact.scheduling_state = "AWAITING_DAY"
+            db.add(contact)
+            db.commit()
+
+            from app.services.ai_engine import ai_engine
+            dynamic_days = ai_engine.get_dynamic_days_list()
+
+            reagenda_reply = (
+                f"¡No te preocupes, {name}! 🗓️ Entendemos que se presentan inconvenientes. Hemos liberado tu cupo anterior.\n\n"
+                f"Selecciona a continuación el nuevo día de tu preferencia para coordinar tu atención personalizada (15 min):\n\n"
+                f"{dynamic_days}\n\n"
+                f"¿Qué día prefieres para coordinar tu nueva atención?"
+            )
+            await whatsapp_service.send_text_message(to_phone=from_phone, message_text=reagenda_reply, db=db)
+            return
+
+        if button_reply_id in ["btn_contact_liliana"] or "hablar con liliana" in content_lower:
             name = f"{contact.first_name or ''}".strip() or "Estimado cliente"
             logger.info(f"Usuario {from_phone} solicitó atención directa con Liliana. Pausando bot.")
             contact.chatbot_enabled = False  # Handover a humano
