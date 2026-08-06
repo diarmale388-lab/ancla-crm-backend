@@ -266,49 +266,41 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
         db.add(contact)
         db.commit()
 
-        target_region = region_construccion or raw_city or "tu región"
+        target_region = region_construccion or raw_city or contact.lot_city or "tu región"
         pref_lower = str(preferencia_contacto).lower()
 
+        pref_display = "Asesoría Personalizada"
         if "llamada" in pref_lower or "telefón" in pref_lower or "telefon" in pref_lower:
-            msg_ruta_b = (
-                f"¡Hola {first_name}! 👋 Gracias por registrarte en ANCLA Special Projects. 🏠✨\n\n"
-                f"Vemos que deseas construir tu proyecto en **{target_region}** y seleccionaste recibir tu asesoría por **Llamada Telefónica**.\n\n"
-                f"Nuestra Directora Comercial **Liliana León** te contactará para brindarte la información técnica sobre nuestros modelos FLEX HOME y Cápsula Living.\n\n"
-                f"¿Te queda bien recibir la llamada hoy mismo?"
-            )
-            buttons_b = [
-                {"id": "btn_virt_yes", "title": "📞 Sí, llamarme hoy"},
-                {"id": "btn_virt_info", "title": "📅 Agendar horario"},
-                {"id": "btn_contact_liliana", "title": "📲 Hablar con Liliana"}
-            ]
+            pref_display = "Llamada Telefónica Comercial"
         elif "video" in pref_lower or "zoom" in pref_lower or "meet" in pref_lower:
-            msg_ruta_b = (
-                f"¡Hola {first_name}! 👋 Gracias por registrarte en ANCLA Special Projects. 🏠✨\n\n"
-                f"Vemos que deseas construir tu proyecto en **{target_region}** y seleccionaste recibir tu **Asesoría Virtual (Google Meet / Zoom)**.\n\n"
-                f"Disponemos de horarios diurnos de **Lunes a Viernes (10:00 AM - 12:00 PM y 2:00 PM - 4:30 PM)** y **Sábados (10:00 AM - 12:00 PM)**.\n\n"
-                f"¿Qué día y jornada te queda más cómodo para agendar tu espacio exclusivo?"
-            )
-            buttons_b = [
-                {"id": "btn_virt_yes", "title": "💻 Agendar Mañana"},
-                {"id": "btn_virt_info", "title": "💻 Agendar Viernes"},
-                {"id": "btn_contact_liliana", "title": "📲 Hablar con Liliana"}
-            ]
-        else:
-            msg_ruta_b = (
-                f"¡Hola {first_name}! 👋 Gracias por registrarte en ANCLA Special Projects. 🏠✨\n\n"
-                f"Vemos que estás interesado en construir en **{target_region}** y recibir asesoría a distancia.\n\n"
-                f"Coordinemos tu **Asesoría Virtual (Google Meet / Zoom)** para presentarte nuestros modelos de arquitectura modular de última generación.\n\n"
-                f"¿Cómo prefieres que agendemos tu espacio?"
-            )
-            buttons_b = [
-                {"id": "btn_virt_yes", "title": "💻 Videollamada Zoom"},
-                {"id": "btn_virt_info", "title": "📞 Llamada telefónica"},
-                {"id": "btn_contact_liliana", "title": "📲 Hablar con Liliana"}
-            ]
+            pref_display = "Asesoría Virtual (Google Meet / Zoom)"
+        elif "visita" in pref_lower or "presencial" in pref_lower:
+            pref_display = "Visita Presencial en Showroom Armenia"
+
+        city_str = f" en **{target_region}**" if target_region else ""
+        lot_str = f"registramos que cuentas con terreno propio{city_str}" if contact.lot_status == "Lote Propio" or "si" in str(asistencia_presencial).lower() or "tengo" in str(asistencia_presencial).lower() else "registramos tu proyecto"
+
+        msg_ruta_b = (
+            f"¡Hola {first_name}! 🏠✨ Gracias por registrarte en **ANCLA Special Projects**.\n\n"
+            f"Hemos recibido tu solicitud completada: {lot_str} y seleccionaste **{pref_display}**.\n\n"
+            f"Selecciona a continuación el día para coordinar tu atención personalizada (15 min):\n\n"
+            f"• **1️⃣ Lunes 10 de Agosto**\n"
+            f"• **2️⃣ Martes 11 de Agosto**\n"
+            f"• **3️⃣ Miércoles 12 de Agosto**\n"
+            f"• **4️⃣ Jueves 13 de Agosto**\n"
+            f"• **5️⃣ Viernes 14 de Agosto**\n"
+            f"• **6️⃣ Sábado 15 de Agosto**\n\n"
+            f"¿Qué día prefieres para coordinar tu atención?"
+        )
+        buttons_b = [
+            {"id": "btn_virt_yes", "title": "🗓️ Ver días libres"},
+            {"id": "btn_virt_info", "title": "🏡 Ver modelos Flex"},
+            {"id": "btn_contact_liliana", "title": "📲 Hablar con Liliana"}
+        ]
 
         db_msg = Message(
             contact_id=contact.id,
-            sender_type=SenderType.SYSTEM,
+            sender_type=SenderType.AI,
             channel=ChannelType.WHATSAPP,
             message_type=MessageType.TEXT,
             content=msg_ruta_b,
