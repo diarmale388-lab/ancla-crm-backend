@@ -66,35 +66,35 @@ def parse_and_update_contact_from_text(contact: Contact, raw_text: str, db: Sess
             continue
 
         # 1. Nombre Completo
-        if any(w in k_lower for w in ["full name", "full_name", "nombre completo", "nombre"]):
+        if any(w in k_lower for w in ["full name", "full_name", "nombre completo"]):
             if not contact.first_name or len(contact.first_name) < 3 or contact.first_name.lower() in ["cliente", "lead"]:
                 parts = val_str.split()
-                contact.first_name = parts[0] if parts else "Cliente"
-                contact.last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
+                contact.first_name = (parts[0] if parts else "Cliente")[:100]
+                contact.last_name = (" ".join(parts[1:]) if len(parts) > 1 else "")[:100]
                 updated = True
 
         # 2. Correo Electrónico
         elif any(w in k_lower for w in ["email", "correo"]):
             if not contact.email or "@" not in contact.email:
-                contact.email = val_str.lower()
+                contact.email = val_str.lower()[:255]
                 updated = True
 
         # 3. Ciudad / Ubicación Lote
         elif any(w in k_lower for w in ["ciudad", "departamento", "construir", "city", "ubicación", "ubicacion", "dónde", "donde"]):
             if not contact.lot_city or contact.lot_city.lower() in ["armenia", "por definir"]:
-                contact.lot_city = val_str
+                contact.lot_city = val_str[:100]
                 updated = True
 
         # 4. Estado del Lote
         elif any(w in k_lower for w in ["terreno", "lote", "propio"]):
-            if not contact.lot_status or contact.lot_status.lower() in ["por definir", "sí, ya tengo"]:
-                contact.lot_status = val_str
+            if not contact.lot_status or contact.lot_status.lower() in ["por definir"]:
+                contact.lot_status = val_str[:100]
                 updated = True
 
         # 5. Propósito / Modelo
-        elif any(w in k_lower for w in ["propósito", "proposito", "proyecto", "modelo", "interés", "interes"]):
-            if not contact.interest_product or contact.interest_product.lower() in ["vivienda / campestre", "flex home"]:
-                contact.interest_product = val_str
+        elif any(w in k_lower for w in ["propósito", "proposito", "modelo", "interés", "interes"]):
+            if not contact.interest_product or contact.interest_product.lower() in ["vivienda / campestre"]:
+                contact.interest_product = val_str[:100]
                 updated = True
 
         # 6. Presupuesto / Inversión
@@ -106,6 +106,25 @@ def parse_and_update_contact_from_text(contact: Contact, raw_text: str, db: Sess
                     updated = True
                 except Exception:
                     pass
+
+        # 7. Método de Contacto Preferido
+        elif any(w in k_lower for w in ["prefieres", "asesoría", "asesoria", "recibir", "contacto", "medio"]):
+            contact.preferred_contact_method = val_str[:100]
+            updated = True
+
+    # 8. Diagnóstico de Perfil / Tipo de Cliente (Persona Natural, Empresario, Inversionista)
+    if not contact.client_type or contact.client_type == "Por definir":
+        full_text = (contact.qualification_notes or "") + " " + raw_text
+        full_lower = full_text.lower()
+        if any(w in full_lower for w in ["inversionista", "inversor", "inversión", "inversion", "glamping", "hotelería", "turismo", "renta"]):
+            contact.client_type = "Inversionista"
+            updated = True
+        elif any(w in full_lower for w in ["empresario", "empresa", "negocio", "comercial"]):
+            contact.client_type = "Empresario"
+            updated = True
+        elif any(w in full_lower for w in ["persona natural", "vivienda", "campestre", "propia", "casa"]):
+            contact.client_type = "Persona Natural"
+            updated = True
 
     # Diagnosticar si es Lead VIP (Tiene terreno propio)
     if contact.lot_status and any(w in contact.lot_status.lower() for w in ["sí", "si", "tengo", "propio"]):

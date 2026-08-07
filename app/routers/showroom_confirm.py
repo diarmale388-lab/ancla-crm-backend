@@ -19,16 +19,14 @@ logger = logging.getLogger("showroom_confirm")
 router = APIRouter(prefix="/showroom-confirm", tags=["showroom-confirm"])
 
 DEFAULT_MESSAGE = (
-    "Muy buenos dias, {nombre}!\n\n"
-    "Te habla *Liliana Leon*, Directora Lider de *Ancla Special Projects*.\n\n"
-    "Es un gusto saludarte. Queremos confirmar tu asistencia a nuestra "
-    "*Gran Inauguracion VIP* de nuestro nuevo Showroom y Sala de Ventas en Colombia.\n\n"
-    "*Tu cita*: Hoy, *{dia}* a las *{hora}*\n"
-    "*Ubicacion*: Armenia, Quindio - Avenida Centenario, frente a Pan y Miel.\n\n"
-    "Para nosotros es muy importante contar con tu presencia. "
-    "Nos confirmas tu asistencia?\n\n"
-    "Te esperamos!\n"
-    "_Liliana Leon - Directora Lider, Ancla Special Projects_"
+    "¡Muy buenos días, {nombre}! 🏠✨\n\n"
+    "Te habla *Liliana León*, Directora Comercial de *ANCLA Special Projects*.\n\n"
+    "Es un gusto saludarte. Queremos recordar tu cita agendada para conocer nuestras soluciones modulares (Flex Home y Cápsulas Living).\n\n"
+    "📍 *Tu cita*: *{dia}* a las *{hora}*\n"
+    "🏢 *Ubicación*: Armenia, Quindío — Avenida Centenario, frente a Pan y Miel.\n\n"
+    "¿Nos confirmas tu asistencia por favor?\n\n"
+    "¡Quedamos muy atentos a tu visita!\n"
+    "_Liliana León — Directora Comercial, ANCLA Special Projects_"
 )
 
 

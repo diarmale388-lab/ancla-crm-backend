@@ -74,6 +74,10 @@ app.include_router(showroom.router)
 from app.routers import showroom_confirm
 app.include_router(showroom_confirm.router, prefix=settings.API_V1_STR)
 
+# Módulo de IA Autónomo Sofi AI (/ai_agent)
+from ai_agent.router import router as ai_agent_router
+app.include_router(ai_agent_router)
+
 
 @app.get("/")
 def read_root():

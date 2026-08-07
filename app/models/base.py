@@ -126,6 +126,9 @@ class Contact(Base):
     estimated_budget: Mapped[Optional[float]] = mapped_column(Float, default=0.0, nullable=True) # COP value
     qualification_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True) # VIP, Explorador, Curioso
     qualification_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    preferred_contact_method: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # Llamada tradicional, WhatsApp, etc.
+    advisor_status: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # CONNECTED, SHOWROOM_VISITED, NO_ANSWER, etc.
+    client_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # Persona Natural, Empresario, Inversionista
     
     # Habeas Data (Colombia Ley 1581 de 2012)
     habeas_data_authorized: Mapped[Optional[bool]] = mapped_column(Boolean, default=None, nullable=True)
@@ -242,6 +245,26 @@ class SystemSetting(Base):
 
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class AIBlackBoxLog(Base):
+    """
+    Tabla de Auditoría Caja Negra para el rastreo y diagnóstico continuo de Sofi AI.
+    """
+    __tablename__ = "ai_blackbox_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contact_id: Mapped[Optional[int]] = mapped_column(ForeignKey("contacts.id"), nullable=True)
+    contact_phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False) # CALENDAR_COLLISION, TEXT_TRUNCATION, DEBOUNCE_DROPPED, MODEL_SWITCH, API_ERROR
+    severity: Mapped[str] = mapped_column(String(20), default="INFO", nullable=False) # INFO, WARNING, CRITICAL
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    input_payload: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    output_payload: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    model_used: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    resolved_status: Mapped[str] = mapped_column(String(50), default="RESOLVED", nullable=False) # RESOLVED, INVESTIGATING, FAILED
+
+    created_at: Mapped[dt_module.datetime] = mapped_column(DateTime, default=dt_module.datetime.utcnow, nullable=False)
 
 
 class KnowledgeDocument(Base):

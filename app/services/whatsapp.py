@@ -1,8 +1,9 @@
 import logging
 import httpx
 import asyncio
+import os
+import re
 from typing import Dict, Any, Optional
-from app.config import settings
 
 logger = logging.getLogger("whatsapp_service")
 
@@ -119,27 +120,72 @@ class WhatsAppService:
         btn_footer = "\n\n🔘 [Botones Táctiles Enviados]:\n" + "\n".join(btn_lines)
         full_display_body = body_text + btn_footer if "🔘 [Botones Táctiles" not in body_text else body_text
 
+        # Garantizar que safe_body_text nunca sea vacío ni espacios
+        safe_body_text = (body_text or "").strip()
+        
+        # Eliminar sintaxis interna de botones [ Botón ] del texto visible
+        safe_body_text = re.sub(r'\[\s*.*?\s*\](?:\s*\|\s*\[\s*.*?\s*\])*', '', safe_body_text).strip()
+        
+        if not safe_body_text or len(safe_body_text) < 5:
+            safe_body_text = "ANCLA Special Projects — Información y asesoría sobre tu proyecto modular."
+
+        # Limitar a máximo 1000 caracteres respetando cortes de palabra/oración
+        if len(safe_body_text) > 950:
+            cut = safe_body_text[:950]
+            last_period = max(cut.rfind('.'), cut.rfind('\n'), cut.rfind('!'), cut.rfind('?'))
+            if last_period > 300:
+                safe_body_text = cut[:last_period+1].strip()
+            else:
+                safe_body_text = cut.rsplit(' ', 1)[0] + "..."
+
+        # Formatear el texto para que la conversación en el CRM muestre visualmente los botones enviados
+        btn_lines = [f"  {idx+1}️⃣ {str(b.get('title', '')).strip()}" for idx, b in enumerate(buttons)]
+        btn_footer = "\n\n🔘 [Botones Táctiles Enviados]:\n" + "\n".join(btn_lines)
+        full_display_body = safe_body_text + btn_footer if "🔘 [Botones Táctiles" not in safe_body_text else safe_body_text
+
+        formatted_buttons = []
+        seen_titles = set()
+        for idx, b in enumerate(buttons[:3]):
+            raw_t = str(b.get("title", "")).strip()
+            # Si contiene una hora (ej: 10:30 AM, 11:00 AM, 02:00 PM)
+            time_m = re.search(r'(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?)', raw_t)
+            day_m = re.search(r'\b(Lunes|Martes|Miércoles|Miercoles|Jueves|Viernes|Sábado|Sabado|Domingo)\s*(\d{1,2})?\b', raw_t, re.IGNORECASE)
+            
+            if time_m:
+                time_str = time_m.group(1).strip()
+                if day_m:
+                    day_name = day_m.group(1)[:3].capitalize()
+                    day_num = day_m.group(2) or ""
+                    title_clean = f"{day_name} {day_num} - {time_str}".strip()[:20]
+                else:
+                    title_clean = f"⏰ {time_str}"[:20]
+            else:
+                title_clean = raw_t.replace("📱", "").replace("📍", "").replace("💻", "").replace(" de Agosto", "").replace(" de Septiembre", "").strip()[:20]
+                
+            if title_clean in seen_titles:
+                title_clean = f"{title_clean[:16]} #{idx+1}"
+            seen_titles.add(title_clean)
+            
+            formatted_buttons.append({
+                "type": "reply",
+                "reply": {
+                    "id": str(b.get("id", f"btn_{idx+1}")),
+                    "title": title_clean
+                }
+            })
+
         interactive_data = {
             "type": "button",
-            "body": {"text": body_text},
+            "body": {"text": safe_body_text},
             "action": {
-                "buttons": [
-                    {
-                        "type": "reply",
-                        "reply": {
-                            "id": b["id"],
-                            "title": str(b["title"]).strip()[:20]
-                        }
-                    }
-                    for b in buttons
-                ]
+                "buttons": formatted_buttons
             }
         }
         
         if header_text:
-            interactive_data["header"] = {"type": "text", "text": header_text[:60]}
+            interactive_data["header"] = {"type": "text", "text": str(header_text)[:60]}
         if footer_text:
-            interactive_data["footer"] = {"text": footer_text[:60]}
+            interactive_data["footer"] = {"text": str(footer_text)[:60]}
             
         payload = {
             "messaging_product": "whatsapp",
@@ -186,13 +232,32 @@ class WhatsAppService:
         list_summary = "\n\n📱 [Menú Desplegable de Opciones Enviado]:\n" + "\n".join(list_lines)
         full_display_body = body_text + list_summary if "📱 [Menú Desplegable" not in body_text else body_text
 
+        # Sanitizar sections para cumplir con los límites estrictos de Meta Cloud API
+        sanitized_sections = []
+        for sec in sections:
+            sec_title = str(sec.get("title", "Opciones")).strip()[:24]
+            sanitized_rows = []
+            for row in sec.get("rows", []):
+                r_title = str(row.get("title", "")).strip()[:24]
+                r_desc = str(row.get("description", "")).strip()[:72] if row.get("description") else None
+                row_dict = {
+                    "id": str(row.get("id", "")).strip(),
+                    "title": r_title
+                }
+                if r_desc:
+                    row_dict["description"] = r_desc
+                sanitized_rows.append(row_dict)
+            sanitized_sections.append({
+                "title": sec_title,
+                "rows": sanitized_rows
+            })
+
         list_data = {
             "type": "list",
-            "header": {"type": "text", "text": header_text[:60]},
-            "body": {"text": body_text},
+            "body": {"text": body_text[:1000]},
             "action": {
                 "button": button_text[:20],
-                "sections": sections
+                "sections": sanitized_sections
             }
         }
         if footer_text:

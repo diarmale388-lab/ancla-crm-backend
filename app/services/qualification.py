@@ -73,9 +73,7 @@ def analyze_and_qualify_lead(db: Session, contact: Contact, message_text: str) -
         
     if api_key:
         is_openrouter = api_key.startswith("sk-or-v1")
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-        if is_openrouter:
-            url = "https://openrouter.ai/api/v1/chat/completions"
+        url = "https://openrouter.ai/api/v1/chat/completions" if is_openrouter else f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
             
         system_instruction = (
             "Eres un clasificador de prospectos experto para la constructora de casas modulares ANCLA Special Projects.\n"
@@ -89,7 +87,7 @@ def analyze_and_qualify_lead(db: Session, contact: Contact, message_text: str) -
         payload = {}
         if is_openrouter:
             payload = {
-                "model": os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat"),
+                "model": "google/gemini-3.5-flash-lite",
                 "messages": [
                     {"role": "system", "content": system_instruction},
                     {"role": "user", "content": message_text}
@@ -112,7 +110,9 @@ def analyze_and_qualify_lead(db: Session, contact: Contact, message_text: str) -
             if is_openrouter:
                 headers = {
                     "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://anclaspecialprojects.com",
+                    "X-Title": "ANCLA CRM - Sofi AI Module"
                 }
             # analyze_and_qualify_lead es una llamada síncrona, usamos httpx.Client() síncrono.
             with httpx.Client() as sync_client:

@@ -445,8 +445,14 @@ class ContactDetailsPayload(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     interest_product: Optional[str] = None
+    lot_city: Optional[str] = None
+    lot_status: Optional[str] = None
+    estimated_budget: Optional[float] = None
     qualification_level: Optional[str] = None
     qualification_notes: Optional[str] = None
+    preferred_contact_method: Optional[str] = None
+    advisor_status: Optional[str] = None
+    client_type: Optional[str] = None
 
 @router.patch("/{contact_id}/details")
 async def update_contact_details(
@@ -456,26 +462,25 @@ async def update_contact_details(
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
-    Permite a los asesores editar el email, nombre, teléfono, línea de interés y notas del contacto desde la Ficha de Contacto.
+    Permite a los asesores editar la Ficha Técnica 360° completa del contacto.
     """
     contact = db.query(Contact).filter(Contact.id == contact_id).first()
     if not contact:
         raise HTTPException(status_code=404, detail="Contacto no encontrado")
 
-    if payload.first_name is not None:
-        contact.first_name = payload.first_name
-    if payload.last_name is not None:
-        contact.last_name = payload.last_name
-    if payload.email is not None:
-        contact.email = payload.email
-    if payload.phone is not None:
-        contact.phone = payload.phone
-    if payload.interest_product is not None:
-        contact.interest_product = payload.interest_product
-    if payload.qualification_level is not None:
-        contact.qualification_level = payload.qualification_level
-    if payload.qualification_notes is not None:
-        contact.qualification_notes = payload.qualification_notes
+    if payload.first_name is not None: contact.first_name = payload.first_name
+    if payload.last_name is not None: contact.last_name = payload.last_name
+    if payload.email is not None: contact.email = payload.email
+    if payload.phone is not None: contact.phone = payload.phone
+    if payload.interest_product is not None: contact.interest_product = payload.interest_product
+    if payload.lot_city is not None: contact.lot_city = payload.lot_city
+    if payload.lot_status is not None: contact.lot_status = payload.lot_status
+    if payload.estimated_budget is not None: contact.estimated_budget = payload.estimated_budget
+    if payload.qualification_level is not None: contact.qualification_level = payload.qualification_level
+    if payload.qualification_notes is not None: contact.qualification_notes = payload.qualification_notes
+    if payload.preferred_contact_method is not None: contact.preferred_contact_method = payload.preferred_contact_method
+    if payload.advisor_status is not None: contact.advisor_status = payload.advisor_status
+    if payload.client_type is not None: contact.client_type = payload.client_type
 
     db.add(contact)
     db.commit()
@@ -491,8 +496,14 @@ async def update_contact_details(
             "email": contact.email,
             "phone": contact.phone,
             "interest_product": contact.interest_product,
+            "lot_city": contact.lot_city,
+            "lot_status": contact.lot_status,
+            "estimated_budget": contact.estimated_budget,
             "qualification_level": contact.qualification_level,
-            "qualification_notes": contact.qualification_notes
+            "qualification_notes": contact.qualification_notes,
+            "preferred_contact_method": contact.preferred_contact_method,
+            "advisor_status": contact.advisor_status,
+            "client_type": contact.client_type
         }
     }
     await manager.broadcast(ws_payload)
@@ -504,9 +515,88 @@ async def update_contact_details(
         "email": contact.email,
         "phone": contact.phone,
         "interest_product": contact.interest_product,
+        "lot_city": contact.lot_city,
+        "lot_status": contact.lot_status,
+        "estimated_budget": contact.estimated_budget,
         "qualification_level": contact.qualification_level,
-        "qualification_notes": contact.qualification_notes
+        "qualification_notes": contact.qualification_notes,
+        "preferred_contact_method": contact.preferred_contact_method,
+        "advisor_status": contact.advisor_status,
+        "client_type": contact.client_type
     }}
+
+class AdvisorStatusPayload(BaseModel):
+    advisor_status: str
+    notes: Optional[str] = None
+    mode: Optional[str] = "toggle" # "toggle" or "set"
+
+@router.post("/{contact_id}/advisor-status")
+async def update_advisor_status(
+    contact_id: int,
+    payload: AdvisorStatusPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Any:
+    """
+    Registra/conmuta una o varias acciones del asesor (Contacto Realizado, Visita Showroom, Cotización Enviada, No Contestó).
+    """
+    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contacto no encontrado")
+
+    current_tags = [t.strip() for t in (contact.advisor_status or "").split(",") if t.strip()]
+    target_tag = payload.advisor_status.strip()
+
+    if payload.mode == "toggle" and "," not in target_tag:
+        if target_tag in current_tags:
+            current_tags.remove(target_tag)
+            action_done = f"Se desmarcó estatus '{target_tag}'"
+        else:
+            current_tags.append(target_tag)
+            action_done = f"Se marcó estatus '{target_tag}'"
+        new_status_str = ",".join(current_tags)
+    else:
+        new_status_str = target_tag
+        action_done = f"Estatus actualizado a {target_tag}"
+
+    contact.advisor_status = new_status_str
+    db.add(contact)
+
+    from app.services.activity import record_activity
+    status_labels = {
+        "CONNECTED": "🟢 Asesor se conectó a la Asesoría Virtual / Llamada.",
+        "CONTACT_MADE": "📞 / 💻 Contacto Realizado (Llamada o Videollamada).",
+        "SHOWROOM_VISITED": "🏢 Cliente realizó Visita Presencial en Showroom Armenia.",
+        "NO_ANSWER": "🟡 Intento de contacto sin respuesta.",
+        "QUOTATION_SENT": "📑 Propuesta Comercial / Cotización Enviada.",
+        "CANCELLED": "❌ Cita cancelada o no asistió."
+    }
+    desc = status_labels.get(target_tag, action_done)
+    if payload.notes:
+        desc += f" Nota: '{payload.notes}'"
+
+    record_activity(
+        db=db,
+        contact_id=contact.id,
+        activity_type="advisor_status_update",
+        description=desc,
+        user_id=current_user.id
+    )
+
+    db.commit()
+    db.refresh(contact)
+
+    ws_payload = {
+        "event": "advisor_status_updated",
+        "data": {
+            "contact_id": contact.id,
+            "advisor_status": contact.advisor_status,
+            "description": desc
+        }
+    }
+    await manager.broadcast(ws_payload)
+
+    return {"status": "success", "advisor_status": contact.advisor_status, "description": desc}
 
 @router.patch("/{contact_id}/assign")
 async def assign_contact(
@@ -1019,35 +1109,19 @@ async def process_ai_trigger_background(contact_id: int, user_id: int, user_name
                     db.add(db_ai_msg)
                     db.commit()
         else:
-            is_initial_greeting = any(w in ai_reply.lower() for w in ["showroom presencial", "fechas de exhibición", "cupo de visita presencial", "selecciona el día de tu preferencia", "gracias por registrarte a la gran inauguración", "selecciona el día que prefieres visitarnos"])
-            is_time_selection = "para tu atención presencial el" in ai_reply.lower() or "selecciona la hora de tu preferencia" in ai_reply.lower()
-            is_secondary_hours = "contamos también con los siguientes horarios" in ai_reply.lower() or "cuál de estos tres te queda mejor" in ai_reply.lower()
+            import re
+            raw_b = re.findall(r'\[\s*(.*?)\s*\]', ai_reply or "")
+            parsed_b = [m.strip() for m in raw_b if m.strip() and not m.strip().startswith("http")]
 
-            if is_secondary_hours or is_time_selection:
-                sections = [
-                    {"title": "Horarios de la Mañana", "rows": [{"id": "btn_time_1000", "title": "10:00 AM", "description": "Atención Showroom Armenia"}, {"id": "btn_time_1130", "title": "11:30 AM", "description": "Atención Showroom Armenia"}]},
-                    {"title": "Horarios de la Tarde", "rows": [{"id": "btn_time_1400", "title": "02:00 PM", "description": "Atención Showroom Armenia"}, {"id": "btn_time_1600", "title": "04:00 PM", "description": "Atención Showroom Armenia"}, {"id": "btn_time_1700", "title": "05:00 PM", "description": "Atención Showroom Armenia"}]}
-                ]
-                external_res = await whatsapp_service.send_interactive_list(
-                    to_phone=contact.phone,
-                    header_text="Horarios Disponibles",
-                    body_text=ai_reply,
-                    button_text="📅 Ver Horarios",
-                    sections=sections,
-                    footer_text="Ancla Special Projects",
-                    db=db
-                )
-            elif is_initial_greeting:
-                buttons = [
-                    {"id": "btn_day_mar28", "title": "📍 Martes 28 Julio"},
-                    {"id": "btn_day_mie29", "title": "📍 Miérc 29 Julio"}
-                ]
+            if 1 <= len(parsed_b) <= 3:
+                btn_objs = [{"id": f"btn_chat_{idx+1}", "title": b[:20]} for idx, b in enumerate(parsed_b)]
+                clean_body = re.sub(r'\[\s*.*?\s*\](?:\s*\|\s*\[\s*.*?\s*\])*', '', ai_reply).strip() or ai_reply
                 external_res = await whatsapp_service.send_interactive_buttons(
                     to_phone=contact.phone,
-                    body_text=ai_reply,
-                    buttons=buttons,
+                    body_text=clean_body,
+                    buttons=btn_objs,
                     header_text="ANCLA Special Projects",
-                    footer_text="Selecciona el día de tu preferencia",
+                    footer_text="Selecciona tu opción",
                     db=db
                 )
             else:

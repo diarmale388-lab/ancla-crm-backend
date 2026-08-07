@@ -211,41 +211,28 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
         db.add(contact)
         db.commit()
 
-        msg_ruta_a = (
-            f"¡Hola {first_name}! 👋 Gracias por tu interés en ANCLA Special Projects. 🏠✨\n\n"
-            f"Vemos que estás en el Eje Cafetero y te gustaría agendar tu visita a nuestro **Showroom en Armenia**.\n\n"
-            f"📍 **Ubicación**: Armenia, Quindío — Avenida Centenario, frente a Pan y Miel.\n\n"
-            f"Por favor indícanos qué día te queda mejor para coordinar tu espacio exclusivo:"
-        )
-
-        db_msg = Message(
-            contact_id=contact.id,
-            sender_type=SenderType.SYSTEM,
-            channel=ChannelType.WHATSAPP,
-            message_type=MessageType.TEXT,
-            content=msg_ruta_a,
-            status=MessageStatus.SENT
-        )
-        db.add(db_msg)
-        db.commit()
-
-        buttons = [
-            {"id": "btn_confirm_today", "title": "📍 Visitar esta semana"},
-            {"id": "btn_confirm_tomorrow", "title": "📍 Próxima semana"},
-            {"id": "btn_contact_liliana", "title": "📲 Hablar con Liliana"}
-        ]
-        try:
-            await whatsapp_service.send_interactive_buttons(
+        # Invocación directa a Sofi AI para el mensaje de bienvenida inicial
+        from app.services.ai_engine import ai_engine
+        ai_reply = await ai_engine.generate_autopilot_reply(db, contact, form_chat_msg)
+        if ai_reply:
+            await whatsapp_service.send_interactive_list(
                 to_phone=contact.phone,
-                body_text=msg_ruta_a,
-                buttons=buttons,
                 header_text="ANCLA Special Projects",
-                footer_text="Selecciona tu opción preferida",
+                body_text=ai_reply,
+                button_text="📅 Seleccionar Día",
+                sections=[
+                    {
+                        "title": "Días Disponibles",
+                        "rows": [
+                            {"id": "day_2026-08-07_VIRTUAL", "title": "Viernes 7 de Agosto", "description": "Atención Mañana únicamente"},
+                            {"id": "day_2026-08-08_VIRTUAL", "title": "Sábado 8 de Agosto", "description": "Atención Mañana únicamente"},
+                            {"id": "day_2026-08-10_VIRTUAL", "title": "Lunes 10 de Agosto", "description": "Atención Mañana y Tarde"}
+                        ]
+                    }
+                ],
+                footer_text="Selecciona tu día",
                 db=db
             )
-        except Exception as e_wa:
-            logger.error(f"Error enviando mensaje CAMPAÑA LOCAL por WhatsApp: {e_wa}")
-            await whatsapp_service.send_text_message(to_phone=contact.phone, message_text=msg_ruta_a, db=db)
 
         record_activity(db, contact.id, "leadgen_workflow", f"Workflow CAMPAÑA LOCAL ejecutado: Asignada etiqueta [SHOWROOM_PRESENCIAL] y asesor {agent_name}.")
 
@@ -289,35 +276,28 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
         db.add(contact)
         db.commit()
 
-        target_region = region_construccion or raw_city or contact.lot_city or "tu región"
-        pref_lower = str(preferencia_contacto).lower()
-
-        pref_display = "Asesoría Personalizada"
-        if "llamada" in pref_lower or "telefón" in pref_lower or "telefon" in pref_lower:
-            pref_display = "Llamada Telefónica Comercial"
-        elif "video" in pref_lower or "zoom" in pref_lower or "meet" in pref_lower:
-            pref_display = "Asesoría Virtual (Google Meet / Zoom)"
-        elif "visita" in pref_lower or "presencial" in pref_lower:
-            pref_display = "Visita Presencial en Showroom Armenia"
-
-        from app.worker import handle_whatsapp_scheduling_flow
-        handled = await handle_whatsapp_scheduling_flow(
-            db, contact, content="📞 Asesoría Virtual", button_reply_id="btn_mode_virtual", from_phone=contact.phone
-        )
-        if handled:
-            return
-            await whatsapp_service.send_interactive_buttons(
+        # Invocación directa a Sofi AI para la bienvenida nacional
+        from app.services.ai_engine import ai_engine
+        ai_reply = await ai_engine.generate_autopilot_reply(db, contact, form_chat_msg)
+        if ai_reply:
+            await whatsapp_service.send_interactive_list(
                 to_phone=contact.phone,
-                body_text=msg_ruta_b,
-                buttons=buttons_b,
                 header_text="ANCLA Special Projects",
-                footer_text="Selecciona tu opción preferida",
+                body_text=ai_reply,
+                button_text="📅 Seleccionar Día",
+                sections=[
+                    {
+                        "title": "Días Disponibles",
+                        "rows": [
+                            {"id": "day_2026-08-07_VIRTUAL", "title": "Viernes 7 de Agosto", "description": "Atención Mañana únicamente"},
+                            {"id": "day_2026-08-08_VIRTUAL", "title": "Sábado 8 de Agosto", "description": "Atención Mañana únicamente"},
+                            {"id": "day_2026-08-10_VIRTUAL", "title": "Lunes 10 de Agosto", "description": "Atención Mañana y Tarde"}
+                        ]
+                    }
+                ],
+                footer_text="Selecciona tu día",
                 db=db
             )
-        except Exception as e_wa:
-            logger.error(f"Error enviando mensaje CAMPAÑA NACIONAL por WhatsApp: {e_wa}")
-            await whatsapp_service.send_text_message(to_phone=contact.phone, message_text=msg_ruta_b, db=db)
-
         record_activity(db, contact.id, "leadgen_workflow", f"Workflow RUTA B ejecutado: Asignada etiqueta [LISTA_ESPERA_VIP] y asesor {agent_name}.")
 
         try:

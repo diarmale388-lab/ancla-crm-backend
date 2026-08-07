@@ -35,20 +35,47 @@ async def transcribe_audio_file(file_path: str) -> str:
         except Exception as e:
             logger.error(f"Error transcribiendo con OpenAI Whisper: {e}")
 
-    # 2. Gemini Multimodal Audio API
-    if gemini_key:
+    # OpenRouter Multimodal Audio API Fallback
+    openrouter_key = os.getenv("OPENROUTER_API_KEY") or getattr(settings, "OPENROUTER_API_KEY", "")
+    if openrouter_key:
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=gemini_key)
-            audio_file = genai.upload_file(path=file_path)
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            prompt = "Transcribe el contenido exacto de este audio de WhatsApp en español. Devuelve ÚNICAMENTE el texto transcripto, sin comentarios adicionales."
-            response = await asyncio.to_thread(model.generate_content, [prompt, audio_file])
-            transcript = response.text.strip()
-            if transcript:
-                logger.info(f"✅ Transcripción exitosa con Gemini Audio: '{transcript}'")
-                return transcript
-        except Exception as e:
-            logger.error(f"Error transcribiendo con Gemini Audio: {e}")
+            import base64
+            with open(file_path, "rb") as f:
+                b64_audio = base64.b64encode(f.read()).decode("utf-8")
+
+            url = "https://openrouter.ai/api/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {openrouter_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://anclaspecialprojects.com",
+                "X-Title": "ANCLA CRM - Sofi AI Module"
+            }
+            payload = {
+                "model": "google/gemini-2.5-flash",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Transcribe el contenido exacto de este audio de WhatsApp en español. Devuelve ÚNICAMENTE el texto transcripto, sin comentarios adicionales."},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:audio/ogg;base64,{b64_audio}"
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+            async with httpx.AsyncClient() as client:
+                res = await client.post(url, json=payload, headers=headers, timeout=25.0)
+                if res.status_code == 200:
+                    data = res.json()
+                    transcript = data["choices"][0]["message"]["content"].strip()
+                    if transcript:
+                        logger.info(f"✅ Transcripción exitosa con OpenRouter Audio: '{transcript}'")
+                        return transcript
+        except Exception as e_or:
+            logger.error(f"Error transcribiendo con OpenRouter Audio: {e_or}")
 
     return ""
