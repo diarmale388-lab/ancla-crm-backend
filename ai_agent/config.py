@@ -18,7 +18,8 @@ class AIAgentSettings(BaseSettings):
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
     
     CLASSIFIER_MODEL: str = os.getenv("AI_CLASSIFIER_MODEL", "google/gemini-2.5-flash")
-    SALES_EXPERT_MODEL: str = os.getenv("AI_SALES_EXPERT_MODEL", "anthropic/claude-3.5-sonnet")
+    SALES_EXPERT_MODEL: str = os.getenv("AI_SALES_EXPERT_MODEL", "openai/gpt-4o")
+
 
 
     
