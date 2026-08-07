@@ -10,13 +10,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
 
+from app.config import settings
+
 class AIAgentSettings(BaseSettings):
     # Claves de API para OpenRouter
-    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", os.getenv("OPENAI_API_KEY", ""))
+    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY") or getattr(settings, "OPENROUTER_API_KEY", "") or ""
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
     
     CLASSIFIER_MODEL: str = os.getenv("AI_CLASSIFIER_MODEL", "google/gemini-2.5-flash")
-    SALES_EXPERT_MODEL: str = os.getenv("AI_SALES_EXPERT_MODEL", "openai/gpt-4o")
+    SALES_EXPERT_MODEL: str = os.getenv("AI_SALES_EXPERT_MODEL", "anthropic/claude-3.5-sonnet")
+
+
     
     # Parámetros de timeout y reintentos
     REQUEST_TIMEOUT: float = 15.0
