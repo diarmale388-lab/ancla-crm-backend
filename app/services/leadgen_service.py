@@ -9,7 +9,33 @@ from app.services.whatsapp import whatsapp_service
 from app.services.activity import record_activity
 from app.core.round_robin import assign_lead_round_robin
 
+from datetime import datetime, timedelta
+
 logger = logging.getLogger("leadgen_service")
+
+def get_dynamic_upcoming_days(count: int = 3) -> list:
+    """Calcula dinámicamente los próximos días hábiles a partir de la fecha actual."""
+    today = datetime.now()
+    days_es = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo"}
+    months_es = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"}
+    
+    rows = []
+    added = 0
+    for i in range(1, 14):
+        f_date = today + timedelta(days=i)
+        if f_date.weekday() == 6:  # Omitir domingos
+            continue
+        day_str = f"{days_es[f_date.weekday()]} {f_date.day} de {months_es[f_date.month]}"
+        rows.append({
+            "id": f"day_{f_date.strftime('%Y-%m-%d')}_VIRTUAL",
+            "title": day_str[:24],
+            "description": "Atención personalizada disponible"
+        })
+        added += 1
+        if added >= count:
+            break
+    return rows
+
 
 async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> Contact:
     """
