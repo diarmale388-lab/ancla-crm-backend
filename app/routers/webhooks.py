@@ -149,11 +149,15 @@ async def receive_meta_webhook(request: Request, db: Session = Depends(get_db)):
 
     object_type = payload.get("object")
     
-    # 1. Eventos de Direct Leadgen / Zapier / Make / Webhook de Formulario
-    if payload.get("form_name") or payload.get("field_data") or payload.get("Asistencia_Presencial") or payload.get("full_name") or payload.get("phone_number") or payload.get("phone"):
+    # 1. Eventos de WhatsApp
+    if object_type == "whatsapp_business_account":
+        await process_whatsapp_events(payload)
+        return {"status": "success"}
+
+    # 2. Eventos de Direct Leadgen / Zapier / Make / Webhook de Formulario
+    if payload.get("form_name") or payload.get("field_data") or payload.get("Asistencia_Presencial") or payload.get("form_id"):
         from app.services.leadgen_service import process_leadgen_submission
         
-        # Si viene en formato Meta Graph API (field_data)
         lead_data = payload.copy()
         if "field_data" in payload and isinstance(payload["field_data"], list):
             for field_item in payload["field_data"]:
@@ -165,9 +169,6 @@ async def receive_meta_webhook(request: Request, db: Session = Depends(get_db)):
         contact = await process_leadgen_submission(db, lead_data)
         return {"status": "success", "contact_id": contact.id, "phone": contact.phone}
 
-    # 2. Eventos de WhatsApp
-    if object_type == "whatsapp_business_account":
-        await process_whatsapp_events(payload)
 
     # 3. Eventos de Instagram / Facebook / Lead Ads Nativos
     elif object_type in ["instagram", "page"]:

@@ -215,22 +215,9 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
         from app.services.ai_engine import ai_engine
         ai_reply = await ai_engine.generate_autopilot_reply(db, contact, form_chat_msg)
         if ai_reply:
-            await whatsapp_service.send_interactive_list(
+            await whatsapp_service.send_text_message(
                 to_phone=contact.phone,
-                header_text="ANCLA Special Projects",
-                body_text=ai_reply,
-                button_text="📅 Seleccionar Día",
-                sections=[
-                    {
-                        "title": "Días Disponibles",
-                        "rows": [
-                            {"id": "day_2026-08-07_VIRTUAL", "title": "Viernes 7 de Agosto", "description": "Atención Mañana únicamente"},
-                            {"id": "day_2026-08-08_VIRTUAL", "title": "Sábado 8 de Agosto", "description": "Atención Mañana únicamente"},
-                            {"id": "day_2026-08-10_VIRTUAL", "title": "Lunes 10 de Agosto", "description": "Atención Mañana y Tarde"}
-                        ]
-                    }
-                ],
-                footer_text="Selecciona tu día",
+                message_text=ai_reply,
                 db=db
             )
 
@@ -280,24 +267,12 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
         from app.services.ai_engine import ai_engine
         ai_reply = await ai_engine.generate_autopilot_reply(db, contact, form_chat_msg)
         if ai_reply:
-            await whatsapp_service.send_interactive_list(
+            await whatsapp_service.send_text_message(
                 to_phone=contact.phone,
-                header_text="ANCLA Special Projects",
-                body_text=ai_reply,
-                button_text="📅 Seleccionar Día",
-                sections=[
-                    {
-                        "title": "Días Disponibles",
-                        "rows": [
-                            {"id": "day_2026-08-07_VIRTUAL", "title": "Viernes 7 de Agosto", "description": "Atención Mañana únicamente"},
-                            {"id": "day_2026-08-08_VIRTUAL", "title": "Sábado 8 de Agosto", "description": "Atención Mañana únicamente"},
-                            {"id": "day_2026-08-10_VIRTUAL", "title": "Lunes 10 de Agosto", "description": "Atención Mañana y Tarde"}
-                        ]
-                    }
-                ],
-                footer_text="Selecciona tu día",
+                message_text=ai_reply,
                 db=db
             )
+
         record_activity(db, contact.id, "leadgen_workflow", f"Workflow RUTA B ejecutado: Asignada etiqueta [LISTA_ESPERA_VIP] y asesor {agent_name}.")
 
         try:
