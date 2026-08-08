@@ -827,13 +827,30 @@ async def process_whatsapp_message(ctx, payload: dict):
                 db.commit()
                 db.refresh(db_ai_msg)
 
-                # Enviar respuesta de Sofi AI directamente a WhatsApp Cloud API (100% libre de interceptores estáticos)
+                # Enviar respuesta de Sofi AI con botones interactivos si se detecta pregunta de modalidad
                 try:
-                    await whatsapp_service.send_text_message(
-                        to_phone=contact.phone,
-                        message_text=ai_reply,
-                        db=db
-                    )
+                    ai_reply_lower = ai_reply.lower()
+                    is_modality_question = any(k in ai_reply_lower for k in ["reunión virtual o", "virtual o presencial", "showroom en armenia?", "modalidad prefieres", "asesoría virtual o"])
+                    
+                    if is_modality_question:
+                        buttons = [
+                            {"id": "MODALITY_PRESENCIAL", "title": "🏢 Visita Presencial"},
+                            {"id": "MODALITY_VIRTUAL", "title": "💻 Asesoría Virtual"}
+                        ]
+                        await whatsapp_service.send_quick_buttons(
+                            to_phone=contact.phone,
+                            body_text=ai_reply,
+                            buttons=buttons,
+                            header_text="ANCLA Special Projects",
+                            footer_text="Selecciona una opción",
+                            db=db
+                        )
+                    else:
+                        await whatsapp_service.send_text_message(
+                            to_phone=contact.phone,
+                            message_text=ai_reply,
+                            db=db
+                        )
                     db_ai_msg.status = MessageStatus.DELIVERED
                     db.add(db_ai_msg)
                     db.commit()
