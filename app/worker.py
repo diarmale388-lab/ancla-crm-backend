@@ -1241,7 +1241,6 @@ class WorkerSettings:
         cron(crm_daily_backup_job, hour=0, minute=0), # Todos los días a la medianoche
         cron(autopilot_sweeper_job, minute=set(range(60))), # Se ejecuta cada minuto automáticamente (0% sobrecarga)
         cron(appointment_2h_reminder_cron_job, minute=set(range(0, 60, 15))), # Cada 15 minutos
-        cron(appointment_24h_reminder_cron_job, minute=set(range(0, 60, 30))), # Cada 30 minutos
-        cron(morning_8am_broadcast_job, hour=13, minute=0, day=29, month=7) # 8:00 AM Hora Colombia (13:00 UTC) Miércoles 29 de Julio
+        cron(appointment_24h_reminder_cron_job, minute=set(range(0, 60, 30))) # Cada 30 minutos
     ]
     redis_settings = redis_settings
