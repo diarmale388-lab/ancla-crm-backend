@@ -108,39 +108,68 @@ async def consultar_disponibilidad(fecha_solicitada: str, modalidad: str) -> Dic
             pass
 
         is_presencial = "PRESENCIAL" in modalidad.upper() or "SHOWROOM" in modalidad.upper()
-        max_capacity = 2 if is_presencial else 1
+        max_capacity = 2 if is_presencial else 3
 
-        weekday = target_date.weekday() # 0: Lunes ... 4: Viernes, 5: Sábado, 6: Domingo
-        if weekday == 5: # Sábado (Mañana exclusivamente hasta 1 PM)
-            candidate_slots = ["10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM", "12:00 PM"]
-        elif weekday in range(0, 5): # Lunes a Viernes (Mañana y Tarde)
-            candidate_slots = ["10:00 AM", "11:00 AM", "12:00 PM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM"] if is_presencial else ["10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM", "02:00 PM", "02:30 PM", "03:00 PM", "04:00 PM"]
-        else: # Domingo (Cerrado)
-            candidate_slots = []
-
-        # REGLA DE MARGEN +2 HORAS PARA "HOY"
-        # Si la cita es para hoy, calcular la hora mínima permitida (hora actual Bogotá + 2 horas)
-        cutoff_time = (now_bogota + dt_tz.timedelta(hours=2)).time() if is_today else None
-
+        # Si el día solicitado no tiene cupos disponibles o es Domingo, buscar automáticamente en los días siguientes
+        current_check_date = target_date
         valid_slots = []
-        for s in candidate_slots:
-            # Parsear la hora del slot
-            slot_dt = dt_tz.datetime.strptime(f"{target_date} {s}", "%Y-%m-%d %I:%M %p")
+        
+        for day_offset in range(7):
+            check_date = current_check_date + dt_tz.timedelta(days=day_offset)
+            weekday = check_date.weekday() # 0: Lunes ... 4: Viernes, 5: Sábado, 6: Domingo
             
-            # Si es hoy y el slot cae antes del cutoff de +2h, descartarlo
-            if is_today and cutoff_time and slot_dt.time() <= cutoff_time:
+            if weekday == 6: # Domingo (Cerrado)
                 continue
-
-            # Verificar capacidad DB
-            if slot_counts[s] < max_capacity:
-                valid_slots.append(s)
+                
+            if weekday == 5: # Sábado (Mañana exclusivamente hasta 1 PM)
+                candidate_slots = ["10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM", "12:00 PM"]
+            else: # Lunes a Viernes (Mañana y Tarde)
+                candidate_slots = ["10:00 AM", "11:00 AM", "12:00 PM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM"] if is_presencial else ["10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM", "02:00 PM", "02:30 PM", "03:00 PM", "04:00 PM"]
+                
+            cutoff_time = (now_bogota + dt_tz.timedelta(hours=2)).time() if check_date == now_bogota.date() else None
+            
+            # Consultar citas existentes para check_date
+            day_slot_counts = Counter()
+            try:
+                from app.database import SessionLocal
+                from app.models.base import Appointment
+                db = SessionLocal()
+                existing_appts = db.query(Appointment).filter(
+                    Appointment.datetime >= dt_tz.datetime.combine(check_date, dt_tz.time.min),
+                    Appointment.datetime <= dt_tz.datetime.combine(check_date, dt_tz.time.max),
+                    Appointment.status.in_(["CONFIRMED", "PENDING"])
+                ).all()
+                for a in existing_appts:
+                    h = a.datetime.hour
+                    m = a.datetime.minute
+                    am_pm = "AM" if h < 12 else "PM"
+                    h_12 = h if 1 <= h <= 12 else (h - 12 if h > 12 else 12)
+                    time_formatted = f"{h_12:02d}:{m:02d} {am_pm}"
+                    day_slot_counts[time_formatted] += 1
+                    day_slot_counts[f"{h_12}:{m:02d} {am_pm}"] += 1
+                db.close()
+            except Exception:
+                pass
+                
+            day_slots = []
+            for s in candidate_slots:
+                slot_dt = dt_tz.datetime.strptime(f"{check_date} {s}", "%Y-%m-%d %I:%M %p")
+                if check_date == now_bogota.date() and cutoff_time and slot_dt.time() <= cutoff_time:
+                    continue
+                if day_slot_counts[s] < max_capacity:
+                    day_slots.append(f"{s} ({check_date.strftime('%Y-%m-%d')})")
+                    
+            if day_slots:
+                valid_slots.extend(day_slots)
+                target_date = check_date
+                break
 
         # Construir Payload JSON de Listas Interactivas Meta WhatsApp API
         interactive_rows = []
         for idx, slot_str in enumerate(valid_slots[:10]):
             interactive_rows.append({
                 "id": f"slot_{idx+1}",
-                "title": slot_str,
+                "title": slot_str.split(" (")[0],
                 "description": f"{modalidad.capitalize()} - {target_date.strftime('%Y-%m-%d')}"
             })
 
