@@ -42,9 +42,22 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
             lead_context_str += f"- {k}: {v}\n"
         lead_context_str += "⚠️ REGLA: Reconoce estos datos y no le vuelvas a preguntar lo que el cliente ya respondió en el formulario."
 
+    # Extracción de estado relacional de la BD
+    contact_modality = state.get("metadata", {}).get("scheduling_state") or "NO_DEFINIDA"
+    contact_has_land = state.get("metadata", {}).get("has_land", "No especificado")
+    contact_location = state.get("metadata", {}).get("location", "No especificado")
+    contact_active_appointment = state.get("metadata", {}).get("active_appointment", "Ninguna")
+
+    formatted_prompt = SALES_EXPERT_PROMPT.format(
+        contact_modality=contact_modality,
+        contact_has_land=contact_has_land,
+        contact_location=contact_location,
+        contact_active_appointment=contact_active_appointment
+    )
+
     # Construir mensaje de sistema con contexto dinámico y fecha actual
     system_content = (
-        f"{SALES_EXPERT_PROMPT}\n\n"
+        f"{formatted_prompt}\n\n"
         f"[FECHA Y HORA ACTUAL (COLOMBIA - AMERICA/BOGOTA)]: {current_time_str}\n"
         f"⚠️ NUNCA OFREZCAS DÍAS NI HORAS ANTERIORES A ESTA FECHA/HORA.\n\n"
         f"[CONTEXTO DE SESIÓN]\n- Teléfono cliente: {phone}\n- Nombre cliente: {user_name if user_name else 'No especificado aún'}"
