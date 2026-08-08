@@ -39,12 +39,10 @@ def sanitize_chat_history_for_llm(messages: List[BaseMessage]) -> List[BaseMessa
             
         content_lower = str(getattr(msg, "content", "") or "").lower()
 
-        # 1. Filtrar plantillas de bienvenida antiguas redundantes
+        # 1. Filtrar 100% TODAS las plantillas de bienvenida antiguas de forma incondicional
         is_legacy_template = any(pattern in content_lower for pattern in legacy_template_patterns)
         if is_legacy_template:
-            if seen_welcome_template:
-                continue # Omitir bienvenida duplicada previa
-            seen_welcome_template = True
+            continue
 
         # 2. Evitar mensajes idénticos consecutivos enviados por la IA
         if cleaned and isinstance(msg, AIMessage) and isinstance(cleaned[-1], AIMessage):

@@ -114,11 +114,25 @@ class AIEngine:
         full_message_payload = f"{context_prefix}{last_message}" if context_prefix else last_message
 
         from ai_agent.graph import sofi_ai_agent
-        from langchain_core.messages import HumanMessage
+        from langchain_core.messages import HumanMessage, AIMessage
+        import time
 
-        config = {"configurable": {"thread_id": contact.phone}}
+        # Cargar historial relacional directamente desde la base de datos PostgreSQL
+        db_msgs = db.query(Message).filter(Message.contact_id == contact.id).order_by(Message.created_at.asc()).all()
+        langchain_msgs = []
+        for m in db_msgs[-10:]:
+            if m.sender_type == SenderType.CONTACT:
+                langchain_msgs.append(HumanMessage(content=m.content or ""))
+            elif m.sender_type == SenderType.AI:
+                langchain_msgs.append(AIMessage(content=m.content or ""))
+
+        if not langchain_msgs or (hasattr(langchain_msgs[-1], "content") and langchain_msgs[-1].content != full_message_payload):
+            langchain_msgs.append(HumanMessage(content=full_message_payload))
+
+        thread_key = f"{contact.phone}_{int(time.time())}"
+        config = {"configurable": {"thread_id": thread_key}}
         input_state = {
-            "messages": [HumanMessage(content=full_message_payload)],
+            "messages": langchain_msgs,
             "phone": contact.phone,
             "chatbot_enabled": contact.chatbot_enabled,
             "user_name": f"{contact.first_name or ''} {contact.last_name or ''}".strip(),
