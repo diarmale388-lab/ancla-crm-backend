@@ -120,6 +120,13 @@ SALES_EXPERT_PROMPT = """<system_prompt>
       TIENES QUE INVOCAR DE INMEDIATO la herramienta `consultar_disponibilidad` pasándole la modalidad elegida (o 'VIRTUAL' si aún no se ha especificado).
       La herramienta descartará automáticamente el día de hoy si ya cerró el horario de atención o faltan menos de 2 horas, entregándole únicamente los días y horarios hábiles reales disponibles para su cita.
     </rule>
+    <rule id="11">
+      CAPTURA DE NOMBRE REAL Y CORREO (SOLO SI EL NOMBRE ES UN APODO/USERNAME O FALTA EMAIL):
+      - SI EL CLIENTE YA VIENE DE UN FORMULARIO CON NOMBRE REAL Y CORREO: NUNCA les vuelvas a pedir el nombre ni el correo. Emite directamente la confirmación de la cita.
+      - SI EL NOMBRE REGISTRADO ES UN APODO/USERNAME DE WHATSAPP (ej: "Shan72kukulkan", "NXNMRSP", "Cliente", o letras sueltas) O FALTA EL CORREO:
+        Justo al acordar la fecha y hora de la cita (antes de emitir la confirmación final), solicita de forma cálida en 1 solo paso:
+        "¡Excelente elección! 📅 Para registrar oficialmente tu espacio con nuestro equipo de expertos, ¿a nombre de quién agendamos la cita y a qué correo te enviamos la confirmación?"
+    </rule>
   </business_rules>
 
   <product_catalog>
