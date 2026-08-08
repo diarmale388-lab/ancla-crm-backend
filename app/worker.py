@@ -886,10 +886,28 @@ async def process_whatsapp_message(ctx, payload: dict):
                     db.add(db_ai_msg)
                     db.commit()
                 except Exception as send_err:
-                    logger.error(f"Error al enviar mensaje por WhatsApp API: {send_err}")
-                    db_ai_msg.status = MessageStatus.FAILED
-                    db.add(db_ai_msg)
-                    db.commit()
+                    logger.error(f"Error al enviar elemento interactivo por WhatsApp API: {send_err}")
+                    # FALLBACK DE SEGURIDAD AUTO-HEAL (SOFI SOLA EN AUTOMÁTICO):
+                    # Si falla el botón interactivo, re-intenta automáticamente enviando el mensaje en texto plano
+                    try:
+                        logger.info(f"Re-intentando despacho de seguridad en texto plano para contacto #{contact.id}...")
+                        await asyncio.sleep(1.5)
+                        res_fallback = await whatsapp_service.send_text_message(
+                            to_phone=contact.phone,
+                            message_text=ai_reply,
+                            db=db
+                        )
+                        if res_fallback and (res_fallback.get("messages") or res_fallback.get("status") == "success"):
+                            db_ai_msg.status = MessageStatus.DELIVERED
+                        else:
+                            db_ai_msg.status = MessageStatus.FAILED
+                        db.add(db_ai_msg)
+                        db.commit()
+                    except Exception as fallback_err:
+                        logger.error(f"Fallo final en fallback de texto plano: {fallback_err}")
+                        db_ai_msg.status = MessageStatus.FAILED
+                        db.add(db_ai_msg)
+                        db.commit()
 
                 # Transmitir respuesta de la IA en tiempo real
                 ws_payload_ai = {
