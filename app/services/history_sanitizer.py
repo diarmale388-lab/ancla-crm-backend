@@ -29,7 +29,10 @@ def sanitize_chat_history_for_llm(messages: List[BaseMessage]) -> List[BaseMessa
         "disponemos de horarios diurnos de **lunes a viernes",
         "1️⃣ **visita presencial en showroom armenia**",
         "2️⃣ **asesoría virtual / llamada comercial**",
-        "disponemos de horarios diurnos de lunes a viernes"
+        "disponemos de horarios diurnos de lunes a viernes",
+        "martes 28 de julio",
+        "showroom del 28 y 29",
+        "gran inauguración"
     ]
 
     for msg in messages:
@@ -39,7 +42,7 @@ def sanitize_chat_history_for_llm(messages: List[BaseMessage]) -> List[BaseMessa
             
         content_lower = str(getattr(msg, "content", "") or "").lower()
 
-        # 1. Filtrar 100% TODAS las plantillas de bienvenida antiguas de forma incondicional
+        # 1. Filtrar 100% TODAS las plantillas de bienvenida u ofertas caducadas antiguas
         is_legacy_template = any(pattern in content_lower for pattern in legacy_template_patterns)
         if is_legacy_template:
             continue
