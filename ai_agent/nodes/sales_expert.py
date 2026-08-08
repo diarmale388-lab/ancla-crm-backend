@@ -73,7 +73,7 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
     prompt_messages = [SystemMessage(content=system_content)] + sanitized_history
 
     
-    api_key = ai_settings.OPENROUTER_API_KEY.strip() or "sk-or-v1-dummy-key-for-testing"
+    api_key = ai_settings.OPENROUTER_API_KEY.strip()
     
     # Inicializar Claude 3.5 Sonnet vía OpenRouter con binding de herramientas
     llm = ChatOpenAI(

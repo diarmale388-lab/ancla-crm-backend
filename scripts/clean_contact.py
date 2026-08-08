@@ -41,32 +41,21 @@ def clean_target_contacts():
         print(f"[CLEANUP] Contactos encontrados para purgar: {contact_ids}")
         id_list_str = ",".join(map(str, contact_ids))
 
-        # 1. Eliminar Citas
-        db.query(Appointment).filter(Appointment.contact_id.in_(contact_ids)).delete(synchronize_session=False)
+        # Ejecutar purga de mensajes y citas
+        db.execute(text(f"DELETE FROM messages WHERE contact_id IN ({id_list_str})"))
+        db.execute(text(f"DELETE FROM appointments WHERE contact_id IN ({id_list_str})"))
         db.commit()
-        print("[CLEANUP] Citas eliminadas.")
 
-        # 2. Eliminar Mensajes
-        db.query(Message).filter(Message.contact_id.in_(contact_ids)).delete(synchronize_session=False)
-        db.commit()
-        print("[CLEANUP] Mensajes eliminados.")
-
-        # 3. Eliminar tablas relacionadas por Foreign Key
-        tables_to_clean = ["lead_activity_logs", "habeas_data_consent_logs", "event_audit_trail", "blackbox_audit_logs"]
-        for tbl in tables_to_clean:
+        for tbl in ["notes", "lead_activity_logs", "habeas_data_consent_logs", "event_audit_trail"]:
             try:
                 db.execute(text(f"DELETE FROM {tbl} WHERE contact_id IN ({id_list_str})"))
                 db.commit()
-                print(f"[CLEANUP] Registros eliminados de '{tbl}'.")
-            except Exception as tbl_err:
+            except Exception:
                 db.rollback()
-                print(f"[CLEANUP] Omitiendo '{tbl}': {tbl_err}")
 
-        # 4. Eliminar los contactos de la tabla contacts
-        db.query(Contact).filter(Contact.id.in_(contact_ids)).delete(synchronize_session=False)
+        db.execute(text(f"DELETE FROM contacts WHERE id IN ({id_list_str})"))
         db.commit()
-
-        print(f"[CLEANUP] ✅ Purga completada exitosamente. Contactos {contact_ids} y todos sus historiales fueron eliminados por completo.")
+        print(f"[CLEANUP] ✅ Purga completada exitosamente. Contactos {contact_ids} y todos sus registros asociados fueron eliminados.")
 
     except Exception as e:
         import traceback

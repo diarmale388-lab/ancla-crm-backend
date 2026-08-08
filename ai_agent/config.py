@@ -12,9 +12,24 @@ from typing import Optional
 
 from app.config import settings
 
+def get_dynamic_openrouter_key() -> str:
+    key = os.getenv("OPENROUTER_API_KEY")
+    if key and len(key) > 20:
+        return key
+    try:
+        from app.database import SessionLocal
+        from app.models.base import SystemSetting
+        db = SessionLocal()
+        s = db.query(SystemSetting).filter(SystemSetting.key.in_(["gemini_api_key", "openrouter_api_key"])).first()
+        db_key = s.value if s and s.value else ""
+        db.close()
+        return db_key
+    except Exception:
+        return ""
+
 class AIAgentSettings(BaseSettings):
     # Claves de API para OpenRouter
-    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY") or getattr(settings, "OPENROUTER_API_KEY", "") or ""
+    OPENROUTER_API_KEY: str = get_dynamic_openrouter_key()
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
     
     CLASSIFIER_MODEL: str = os.getenv("AI_CLASSIFIER_MODEL", "google/gemini-2.5-flash")
