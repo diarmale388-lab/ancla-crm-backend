@@ -295,8 +295,8 @@ async def process_ai_response_after_consent(contact_id: int, last_message_conten
                         "created_at": db_ai_msg.created_at.isoformat()
                     }
                 }
-                await manager.broadcast(ws_payload)
     except Exception as e:
+        logger.error(f"Error procesando respuesta de IA: {e}")
     finally:
         db.close()
 
@@ -799,6 +799,7 @@ async def process_whatsapp_message(ctx, payload: dict):
                 contact=contact,
                 last_message=accumulated_text
             )
+            if ai_reply:
                 try:
                     from app.services.audit_trail import log_event_audit
                     log_event_audit(
