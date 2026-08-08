@@ -129,9 +129,13 @@ class AIEngine:
         if not langchain_msgs or (hasattr(langchain_msgs[-1], "content") and langchain_msgs[-1].content != full_message_payload):
             langchain_msgs.append(HumanMessage(content=full_message_payload))
 
-        print(f"\n[AI_ENGINE] Historial cargado de la BD ({len(db_msgs)} mensajes en total, {len(langchain_msgs)} enviados al LLM):")
-        for idx, m_item in enumerate(langchain_msgs):
-            print(f"  - [{idx+1}] {m_item.__class__.__name__}: {getattr(m_item, 'content', '')[:100]}")
+        try:
+            print(f"\n[AI_ENGINE] Historial cargado de la BD ({len(db_msgs)} mensajes en total, {len(langchain_msgs)} enviados al LLM):")
+            for idx, m_item in enumerate(langchain_msgs):
+                safe_prev = str(getattr(m_item, 'content', ''))[:100].encode('ascii', errors='replace').decode('ascii')
+                print(f"  - [{idx+1}] {m_item.__class__.__name__}: {safe_prev}")
+        except Exception:
+            pass
 
         thread_key = f"{contact.phone}_{int(time.time())}"
         config = {"configurable": {"thread_id": thread_key}}
@@ -158,15 +162,23 @@ class AIEngine:
                     
                 if hasattr(msg, "type") and msg.type == "ai" and hasattr(msg, "content") and str(msg.content).strip():
                     ai_res_text = str(msg.content).strip()
-                    print(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente: '{ai_res_text[:120]}...'")
-                    logger.info(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente: '{ai_res_text[:120]}...'")
+                    try:
+                        safe_log = ai_res_text[:120].encode('ascii', errors='replace').decode('ascii')
+                        print(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente: '{safe_log}...'")
+                    except Exception:
+                        pass
+                    logger.info(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente")
                     return ai_res_text
                 elif isinstance(msg, dict) and msg.get("role") == "assistant" and str(msg.get("content", "")).strip():
                     if msg.get("tool_calls"):
                         continue
                     ai_res_text = str(msg.get("content")).strip()
-                    print(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente (dict): '{ai_res_text[:120]}...'")
-                    logger.info(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente (dict): '{ai_res_text[:120]}...'")
+                    try:
+                        safe_log = ai_res_text[:120].encode('ascii', errors='replace').decode('ascii')
+                        print(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente (dict): '{safe_log}...'")
+                    except Exception:
+                        pass
+                    logger.info(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente (dict)")
                     return ai_res_text
             print("[AI_ENGINE] Advertencia: No se encontró ningún mensaje válido en el estado final del agente.")
             return None
