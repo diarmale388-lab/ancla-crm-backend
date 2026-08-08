@@ -108,7 +108,7 @@ async def consultar_disponibilidad(fecha_solicitada: str, modalidad: str) -> Dic
             pass
 
         is_presencial = "PRESENCIAL" in modalidad.upper() or "SHOWROOM" in modalidad.upper()
-        max_capacity = 2 if is_presencial else 3
+        max_capacity = 2 if is_presencial else 1
 
         # Si el día solicitado no tiene cupos disponibles o es Domingo, buscar automáticamente en los días siguientes
         current_check_date = target_date
