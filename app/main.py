@@ -3,7 +3,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.core.socket_manager import manager
-from app.database import engine
+from app.database import engine, get_db
+from sqlalchemy.orm import Session
 from app.models.base import Base
 from app.routers import auth, chats, webhooks, ai, meta_ads, pipeline, appointments, settings as settings_router, google_auth, analytics, broadcasts, proposals, sse, showroom
  
