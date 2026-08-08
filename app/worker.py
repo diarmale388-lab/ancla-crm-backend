@@ -473,6 +473,18 @@ async def process_whatsapp_message(ctx, payload: dict):
         db.commit()
         db.refresh(db_msg)
 
+        try:
+            from app.services.audit_trail import log_event_audit
+            log_event_audit(
+                db=db,
+                source="META_WEBHOOK",
+                event_type="INCOMING_MSG",
+                contact_id=contact.id,
+                payload={"from_phone": contact.phone, "content": content, "msg_id": db_msg.id}
+            )
+        except Exception as aud_e:
+            logger.error(f"Audit log error incoming: {aud_e}")
+
         # Transmitir en tiempo real
         ws_payload = {
             "event": "new_message",
@@ -778,15 +790,17 @@ async def process_whatsapp_message(ctx, payload: dict):
                 contact=contact,
                 last_message=accumulated_text
             )
-            if ai_reply:
-                ultimo_mensaje_ia = db.query(Message).filter(
-                    Message.contact_id == contact.id,
-                    Message.sender_type == SenderType.AI
-                ).order_by(Message.created_at.desc()).first()
-
-                if ultimo_mensaje_ia and ultimo_mensaje_ia.content == ai_reply:
-                    logger.info("Mensaje duplicado detectado, ajustando dinámicamente contenido para evitar silencio.")
-                    ai_reply += "\n\nQuedo a tu entera disposición para resolver cualquier inquietud sobre tu proyecto. 😊"
+                try:
+                    from app.services.audit_trail import log_event_audit
+                    log_event_audit(
+                        db=db,
+                        source="AI_ENGINE",
+                        event_type="AI_REPLY_GENERATED",
+                        contact_id=contact.id,
+                        payload={"reply": ai_reply[:200]}
+                    )
+                except Exception as aud_ai_e:
+                    logger.error(f"Audit log error AI reply: {aud_ai_e}")
 
                 # Guardar respuesta de la IA
                 db_ai_msg = Message(
