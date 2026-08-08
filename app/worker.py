@@ -387,6 +387,8 @@ async def process_whatsapp_message(ctx, payload: dict):
         if not content:
             content = msg.get("text", {}).get("body", "") or msg.get("button", {}).get("text", "") or msg.get("interactive", {}).get("list_reply", {}).get("title", "") or msg.get("interactive", {}).get("button_reply", {}).get("title", "") or f"[Mensaje de WhatsApp: {msg_type}]"
 
+        content_lower = (content or "").lower().strip()
+
         # 2. Buscar o Crear Contacto (flexible con o sin '+')
         clean_from = "".join(filter(str.isdigit, str(from_phone)))
         contact = db.query(Contact).filter(
@@ -563,7 +565,7 @@ async def process_whatsapp_message(ctx, payload: dict):
             return
 
         # 7. Evaluar Solicitud de Hablar con Liliana León (Escalación Manual de Atención)
-        if button_reply_id in ["btn_contact_liliana", "btn_liliana"] or any(w in content_lower for w in ["hablar con liliana", "hablar con liliana león", "hablar con liliana leon", "contactar a liliana", "comunicar con liliana"]):
+        if button_reply_id in ["btn_contact_liliana", "btn_liliana"] or any(w in text_lower for w in ["hablar con liliana", "hablar con liliana león", "hablar con liliana leon", "contactar a liliana", "comunicar con liliana"]):
             name = f"{contact.first_name or ''}".strip() or "estimado cliente"
             liliana_msg = (
                 f"¡Entendido, {name}! 📲✨ En aproximadamente 15 minutos nuestra Directora Comercial **Liliana León** "
