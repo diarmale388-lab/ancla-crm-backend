@@ -1010,12 +1010,54 @@ from app.services.audit_logger import get_audit_logs
 
 @router.get("/logs/audit")
 def fetch_audit_logs(
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Retorna los registros de auditoría y diagnóstico en vivo para la consola CMD.
+    Retorna los registros de auditoría y diagnóstico en vivo para la consola del CRM.
+    Combina la tabla event_audit_trail de Neon DB con los logs del sistema.
     """
-    return get_audit_logs()
+    from app.services.audit_logger import audit_logs
+    from sqlalchemy import text
+
+    system_logs = list(audit_logs)
+
+    try:
+        sql = """
+            SELECT a.id, a.trace_id, a.contact_id, a.timestamp, a.source, a.event_type, a.execution_path, a.payload, c.first_name, c.phone
+            FROM event_audit_trail a
+            LEFT JOIN contacts c ON a.contact_id = c.id
+            ORDER BY a.id DESC LIMIT 50
+        """
+        db_rows = db.execute(text(sql)).fetchall()
+
+        db_logs = []
+        for r in reversed(db_rows):
+            ts = r[3].strftime("%I:%M:%S %p") if r[3] else "00:00:00 AM"
+            source = r[4] or "SYSTEM"
+            event_type = r[5] or "INFO"
+            exec_path = r[6] or "N/A"
+            payload_str = str(r[7] or "")
+            contact_str = f"Cliente #{r[2]} ({r[8] or ''} {r[9] or ''})".strip() if r[2] else "Sistema"
+
+            level = "error" if "error" in event_type.lower() or "fail" in event_type.lower() else "success" if "success" in event_type.lower() or "send" in event_type.lower() else "info"
+            msg_type = "ai" if "ai" in source.lower() else "webhook" if "webhook" in source.lower() or "meta" in source.lower() or "whatsapp" in source.lower() else "system"
+
+            formatted_msg = f"🔎 [{source}] {contact_str} ➔ {event_type} | Código: {exec_path} | Metadatos: {payload_str[:160]}"
+
+            db_logs.append({
+                "id": r[0] + 100000,
+                "timestamp": ts,
+                "type": msg_type,
+                "level": level,
+                "message": formatted_msg
+            })
+
+        return system_logs + db_logs
+    except Exception as e:
+        logger.error(f"Error cargando event_audit_trail en fetch_audit_logs: {e}")
+        return system_logs
+
 
 
 @router.post("/{contact_id}/corrections", response_model=CorrectionResponse)
