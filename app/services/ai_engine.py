@@ -104,22 +104,26 @@ class AIEngine:
         if not contact or not contact.chatbot_enabled:
             return None
 
-        if contact.scheduling_state:
-            contact.scheduling_state = None
-            db.add(contact)
-            db.commit()
+        # Preservar e inyectar contexto de estado de agendamiento si existe
+        context_prefix = ""
+        if contact.scheduling_state == "MODALITY_VIRTUAL":
+            context_prefix = "[CONTEXTO DE SISTEMA: El cliente YA eligió previamente la modalidad 'ASESORÍA VIRTUAL'. Si el mensaje pide agendar o da un día/jornada, NO preguntes la modalidad; invoca directamente consultar_disponibilidad para Asesoría Virtual].\n\n"
+        elif contact.scheduling_state == "MODALITY_PRESENCIAL":
+            context_prefix = "[CONTEXTO DE SISTEMA: El cliente YA eligió previamente la modalidad 'VISITA PRESENCIAL EN SHOWROOM ARMENIA'. Si el mensaje pide agendar o da un día/jornada, NO preguntes la modalidad; invoca directamente consultar_disponibilidad para Visita Presencial].\n\n"
+
+        full_message_payload = f"{context_prefix}{last_message}" if context_prefix else last_message
 
         from ai_agent.graph import sofi_ai_agent
         from langchain_core.messages import HumanMessage
 
         config = {"configurable": {"thread_id": contact.phone}}
         input_state = {
-            "messages": [HumanMessage(content=last_message)],
+            "messages": [HumanMessage(content=full_message_payload)],
             "phone": contact.phone,
             "chatbot_enabled": contact.chatbot_enabled,
             "user_name": f"{contact.first_name or ''} {contact.last_name or ''}".strip(),
             "requires_human": False,
-            "metadata": {}
+            "metadata": {"scheduling_state": contact.scheduling_state}
         }
 
         try:

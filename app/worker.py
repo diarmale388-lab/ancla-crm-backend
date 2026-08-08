@@ -730,6 +730,17 @@ async def process_whatsapp_message(ctx, payload: dict):
         from app.services.automation import check_message_keywords_trigger
         check_message_keywords_trigger(db, contact, content)
 
+        # Persistencia de Modalidad en Estado de Contacto
+        content_lower = (content or "").lower()
+        if "virtual" in content_lower or "llamada" in content_lower:
+            contact.scheduling_state = "MODALITY_VIRTUAL"
+            db.add(contact)
+            db.commit()
+        elif "presencial" in content_lower or "showroom" in content_lower or "visita" in content_lower:
+            contact.scheduling_state = "MODALITY_PRESENCIAL"
+            db.add(contact)
+            db.commit()
+
         # 10. Piloto Automático de la Inteligencia Artificial (Sofi) con Debounce de Acumulación (2.0 Segundos)
         if contact.chatbot_enabled and msg_type in ["text", "audio", "voice", "interactive", "button", "list_reply", "button_reply"]:
             # Debounce: Esperar 2.0 segundos para agrupar respuestas ultrarrápidas
@@ -774,8 +785,8 @@ async def process_whatsapp_message(ctx, payload: dict):
                 ).order_by(Message.created_at.desc()).first()
 
                 if ultimo_mensaje_ia and ultimo_mensaje_ia.content == ai_reply:
-                    logger.info("Evitando mensaje exactamente duplicado en worker.")
-                    return
+                    logger.info("Mensaje duplicado detectado, ajustando dinámicamente contenido para evitar silencio.")
+                    ai_reply += "\n\nQuedo a tu entera disposición para resolver cualquier inquietud sobre tu proyecto. 😊"
 
                 # Guardar respuesta de la IA
                 db_ai_msg = Message(
