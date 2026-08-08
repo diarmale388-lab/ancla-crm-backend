@@ -107,8 +107,4 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
             print(f"[FALLBACK] Traceback completo:\n{err_tb}")
         except Exception:
             pass
-        # Fallback elegante si hay un fallo de API externo
-        fallback_msg = AIMessage(
-            content="¡Hola! Con mucho gusto te asesoramos sobre nuestras casas modulares (Flex Home y Cápsula Living). ¿En qué ciudad o municipio proyectas tu construcción?"
-        )
-        return {"messages": [fallback_msg]}
+        return {"messages": []}

@@ -943,11 +943,17 @@ async def autopilot_sweeper_job(ctx):
     """
     db = SessionLocal()
     try:
-        contacts = db.query(Contact).filter(Contact.chatbot_enabled == True).all()
+        # Solo atender mensajes recientes de los últimos 15 minutos que hayan quedado sin responder
+        import datetime as dt_swp
+        cutoff_15m = dt_swp.datetime.utcnow() - dt_swp.timedelta(minutes=15)
+        
+        contacts = db.query(Contact).filter(
+            Contact.chatbot_enabled == True,
+            Contact.updated_at >= cutoff_15m
+        ).all()
         for c in contacts:
             last_msg = db.query(Message).filter(Message.contact_id == c.id).order_by(Message.created_at.desc()).first()
-            if last_msg and last_msg.sender_type == SenderType.CONTACT:
-                import datetime as dt_swp
+            if last_msg and last_msg.sender_type == SenderType.CONTACT and last_msg.created_at >= cutoff_15m:
                 if dt_swp.datetime.utcnow() - last_msg.created_at > dt_swp.timedelta(seconds=90):
                     # Evitar ráfagas: Si ya se respondió por cualquier vía en los últimos 90 segundos, omitir
                     recent_ai = db.query(Message).filter(

@@ -207,8 +207,6 @@ class AIEngine:
             except Exception:
                 pass
 
-            fallback_reply = "¡Hola! Con mucho gusto te asesoramos sobre nuestras soluciones modulares (Flex Home, Cápsula Living y Cuartos Fríos). ¿En qué ciudad o municipio proyectas tu construcción?"
-            print(f"[FALLBACK] Retornando respuesta de contingencia: '{fallback_reply}'")
-            return fallback_reply
+            return None
 
 ai_engine = AIEngine()
