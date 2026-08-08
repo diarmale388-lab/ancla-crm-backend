@@ -827,12 +827,14 @@ async def process_whatsapp_message(ctx, payload: dict):
                 db.commit()
                 db.refresh(db_ai_msg)
 
-                # Enviar respuesta de Sofi AI con botones interactivos si se detecta pregunta de modalidad
+                # Enviar respuesta de Sofi AI con botones o listas interactivas si corresponde
                 try:
+                    import re
                     ai_reply_lower = ai_reply.lower()
-                    is_modality_question = any(k in ai_reply_lower for k in ["reunión virtual o", "virtual o presencial", "showroom en armenia?", "modalidad prefieres", "asesoría virtual o"])
-                    
-                    if is_modality_question:
+                    is_modality_question = any(k in ai_reply_lower for k in ["reunión virtual o", "virtual o presencial", "showroom en armenia?", "modalidad prefieres", "asesoría virtual o", "visitar nuestra sala", "visita presencial"])
+                    time_slots = re.findall(r"(?:0[1-9]|1[0-2]):[0-5][0-9]\s*(?:AM|PM)", ai_reply, re.IGNORECASE)
+
+                    if is_modality_question and not time_slots:
                         buttons = [
                             {"id": "MODALITY_PRESENCIAL", "title": "🏢 Visita Presencial"},
                             {"id": "MODALITY_VIRTUAL", "title": "💻 Asesoría Virtual"}
@@ -843,6 +845,35 @@ async def process_whatsapp_message(ctx, payload: dict):
                             buttons=buttons,
                             header_text="ANCLA Special Projects",
                             footer_text="Selecciona una opción",
+                            db=db
+                        )
+                    elif time_slots and len(time_slots) >= 2:
+                        rows = []
+                        seen = set()
+                        for slot in time_slots:
+                            slot_clean = slot.upper().strip()
+                            if slot_clean not in seen:
+                                seen.add(slot_clean)
+                                rows.append({
+                                    "id": f"slot_{len(rows)+1}",
+                                    "title": slot_clean,
+                                    "description": f"Seleccionar horario {slot_clean}"
+                                })
+                                if len(rows) >= 10:
+                                    break
+                        
+                        sections = [{
+                            "title": "Franjas Disponibles",
+                            "rows": rows
+                        }]
+                        
+                        await whatsapp_service.send_interactive_list(
+                            to_phone=contact.phone,
+                            header_text="📅 Horarios Disponibles",
+                            body_text=ai_reply,
+                            button_text="Ver Horarios",
+                            sections=sections,
+                            footer_text="ANCLA Special Projects",
                             db=db
                         )
                     else:

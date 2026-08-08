@@ -48,8 +48,9 @@ def deploy():
     for m in modules:
         target = os.path.join(backend_dir, m)
         if os.path.exists(target):
-            if not run_cmd(f"{sys.executable} -m py_compile \"{target}\""):
-                print(f"❌ Error de sintaxis en {m}. Abortando despliegue.")
+            res = subprocess.run([sys.executable, "-m", "py_compile", target], capture_output=True, text=True)
+            if res.returncode != 0:
+                print(f"❌ Error de sintaxis en {m}: {res.stderr}. Abortando despliegue.")
                 return
 
     print("   ✅ Sintaxis 100% válida en todos los módulos.")
