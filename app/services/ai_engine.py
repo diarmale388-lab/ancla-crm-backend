@@ -129,6 +129,10 @@ class AIEngine:
         if not langchain_msgs or (hasattr(langchain_msgs[-1], "content") and langchain_msgs[-1].content != full_message_payload):
             langchain_msgs.append(HumanMessage(content=full_message_payload))
 
+        print(f"\n[AI_ENGINE] Historial cargado de la BD ({len(db_msgs)} mensajes en total, {len(langchain_msgs)} enviados al LLM):")
+        for idx, m_item in enumerate(langchain_msgs):
+            print(f"  - [{idx+1}] {m_item.__class__.__name__}: {getattr(m_item, 'content', '')[:100]}")
+
         thread_key = f"{contact.phone}_{int(time.time())}"
         config = {"configurable": {"thread_id": thread_key}}
         input_state = {
@@ -140,6 +144,9 @@ class AIEngine:
             "metadata": {"scheduling_state": contact.scheduling_state}
         }
 
+        print(f"[AI_ENGINE] Invocando LangGraph sofi_ai_agent con Teléfono={contact.phone}, SchedulingState={contact.scheduling_state}...")
+        logger.info(f"[AI_ENGINE] Invocando LangGraph sofi_ai_agent con Teléfono={contact.phone}")
+
         try:
             final_state = await sofi_ai_agent.ainvoke(input_state, config=config)
             messages = final_state.get("messages", [])
@@ -150,17 +157,26 @@ class AIEngine:
                     continue
                     
                 if hasattr(msg, "type") and msg.type == "ai" and hasattr(msg, "content") and str(msg.content).strip():
-                    return str(msg.content).strip()
+                    ai_res_text = str(msg.content).strip()
+                    print(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente: '{ai_res_text[:120]}...'")
+                    logger.info(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente: '{ai_res_text[:120]}...'")
+                    return ai_res_text
                 elif isinstance(msg, dict) and msg.get("role") == "assistant" and str(msg.get("content", "")).strip():
                     if msg.get("tool_calls"):
                         continue
-                    return str(msg.get("content")).strip()
+                    ai_res_text = str(msg.get("content")).strip()
+                    print(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente (dict): '{ai_res_text[:120]}...'")
+                    logger.info(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente (dict): '{ai_res_text[:120]}...'")
+                    return ai_res_text
+            print("[AI_ENGINE] Advertencia: No se encontró ningún mensaje válido en el estado final del agente.")
             return None
 
         except Exception as e:
             import traceback
             err_str = traceback.format_exc()
-            logger.error(f"Error invocando módulo autónomo /ai_agent: {e}")
+            print(f"\n[FALLBACK] Error crítico al invocar /ai_agent: {e}")
+            print(f"[FALLBACK] Traceback completo:\n{err_str}")
+            logger.error(f"[FALLBACK] Error invocando módulo autónomo /ai_agent: {e}\n{err_str}")
             
             try:
                 from app.services.blackbox_auditor import blackbox_auditor
@@ -179,6 +195,8 @@ class AIEngine:
             except Exception:
                 pass
 
-            return "¡Hola! Con mucho gusto te asesoramos sobre nuestras soluciones modulares (Flex Home, Cápsula Living y Cuartos Fríos). ¿En qué ciudad o municipio proyectas tu construcción?"
+            fallback_reply = "¡Hola! Con mucho gusto te asesoramos sobre nuestras soluciones modulares (Flex Home, Cápsula Living y Cuartos Fríos). ¿En qué ciudad o municipio proyectas tu construcción?"
+            print(f"[FALLBACK] Retornando respuesta de contingencia: '{fallback_reply}'")
+            return fallback_reply
 
 ai_engine = AIEngine()

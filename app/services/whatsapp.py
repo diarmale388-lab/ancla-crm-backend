@@ -43,15 +43,9 @@ class WhatsAppService:
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json"
         }
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": to_phone,
-            "type": "text",
-            "text": {
-                "body": message_text
-            }
-        }
+        print(f"\n[WHATSAPP_SEND] Invocado por: send_text_message() | Destino: {to_phone}")
+        print(f"[WHATSAPP_SEND] Texto exacto despachado:\n\"{message_text}\"\n")
+        logger.info(f"[WHATSAPP_SEND] send_text_message to {to_phone}: '{message_text[:100]}...'")
 
         max_retries = 3
         for attempt in range(max_retries):

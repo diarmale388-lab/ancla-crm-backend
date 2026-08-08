@@ -164,15 +164,13 @@ async def receive_meta_webhook(request: Request, db: Session = Depends(get_db)):
     """
     Endpoint centralizado para webhooks de Meta (WhatsApp, Instagram, Facebook y Lead Ads).
     """
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
-    print(f"--> WEBHOOK META RECIBIDO: {payload}")
-    logger.info(f"--> WEBHOOK META RECIBIDO: {payload}")
+    print(f"\n[WEBHOOK] Payload recibido: {payload}")
+    logger.info(f"[WEBHOOK] Payload recibido: {payload}")
 
     # Si viene como una lista de leads (importación masiva)
     if isinstance(payload, list):
+        print("[WEBHOOK] Rama de decisión tomada: Importación Masiva (Lista de Leads)")
+        logger.info("[WEBHOOK] Rama de decisión tomada: Importación Masiva (Lista de Leads)")
         from app.services.leadgen_service import process_leadgen_submission
         imported_contacts = []
         for lead_item in payload:
@@ -182,17 +180,23 @@ async def receive_meta_webhook(request: Request, db: Session = Depends(get_db)):
         return {"status": "success", "imported_count": len(imported_contacts), "contacts": imported_contacts}
 
     if not isinstance(payload, dict):
+        print("[WEBHOOK] Rama de decisión tomada: Ignorado (Payload no es un diccionario)")
+        logger.info("[WEBHOOK] Rama de decisión tomada: Ignorado (Payload no es un diccionario)")
         return {"status": "ignored"}
 
     object_type = payload.get("object")
     
     # 1. Eventos de WhatsApp
     if object_type == "whatsapp_business_account":
+        print(f"[WEBHOOK] Rama de decisión tomada: WhatsApp Business Event ({object_type})")
+        logger.info(f"[WEBHOOK] Rama de decisión tomada: WhatsApp Business Event ({object_type})")
         await process_whatsapp_events(payload)
         return {"status": "success"}
 
     # 2. Eventos de Direct Leadgen / Zapier / Make / Webhook de Formulario
     if payload.get("form_name") or payload.get("field_data") or payload.get("Asistencia_Presencial") or payload.get("form_id"):
+        print("[WEBHOOK] Rama de decisión tomada: Direct Leadgen / Formulario Webhook")
+        logger.info("[WEBHOOK] Rama de decisión tomada: Direct Leadgen / Formulario Webhook")
         from app.services.leadgen_service import process_leadgen_submission
         
         lead_data = payload.copy()
@@ -209,6 +213,8 @@ async def receive_meta_webhook(request: Request, db: Session = Depends(get_db)):
 
     # 3. Eventos de Instagram / Facebook / Lead Ads Nativos
     elif object_type in ["instagram", "page"]:
+        print(f"[WEBHOOK] Rama de decisión tomada: Social Event ({object_type})")
+        logger.info(f"[WEBHOOK] Rama de decisión tomada: Social Event ({object_type})")
         # Verificar si es evento native leadgen
         is_leadgen_native = False
         for entry in payload.get("entry", []):
@@ -246,6 +252,10 @@ async def receive_meta_webhook(request: Request, db: Session = Depends(get_db)):
 
         if not is_leadgen_native:
             await process_instagram_facebook_events(payload, db)
+
+    else:
+        print(f"[WEBHOOK] Rama de decisión tomada: Evento no reconocido (object={object_type})")
+        logger.info(f"[WEBHOOK] Rama de decisión tomada: Evento no reconocido (object={object_type})")
 
     return {"status": "success"}
 

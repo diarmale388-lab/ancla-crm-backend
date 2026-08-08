@@ -306,12 +306,14 @@ async def process_whatsapp_message(ctx, payload: dict):
     Tarea asíncrona para procesar el evento de WhatsApp recibido desde Meta.
     Realiza validación de Habeas Data, persistencia, asignación, RAG, e IA.
     """
-    logger.info("Iniciando procesamiento de tarea de WhatsApp en segundo plano...")
+    print(f"\n[WORKER] Iniciando procesamiento de mensaje WhatsApp: {payload}")
+    logger.info(f"[WORKER] Iniciando procesamiento de mensaje WhatsApp: {payload}")
     
     value = payload.get("value", {})
     messages = value.get("messages", [])
     if not messages:
-        logger.info("No se encontraron mensajes en el payload.")
+        print("[WORKER] No se encontraron mensajes en el payload.")
+        logger.info("[WORKER] No se encontraron mensajes en el payload.")
         return
         
     msg = messages[0]
@@ -319,7 +321,8 @@ async def process_whatsapp_message(ctx, payload: dict):
     from_phone = msg.get("from")
     
     if not from_phone:
-        logger.info("El mensaje no tiene teléfono de origen.")
+        print("[WORKER] El mensaje no tiene teléfono de origen.")
+        logger.info("[WORKER] El mensaje no tiene teléfono de origen.")
         return
 
     # Abrir sesión de base de datos síncrona
@@ -328,9 +331,13 @@ async def process_whatsapp_message(ctx, payload: dict):
         # 1. Comprobar duplicado en la base de datos relacional
         exists = db.query(Message).filter(Message.external_message_id == external_msg_id).first()
         if exists:
-            logger.info(f"Mensaje duplicado de WhatsApp omitido en worker: {external_msg_id}")
+            print(f"[WORKER] Filtro Anti-Duplicados: Mensaje duplicado de WhatsApp omitido en worker (wamid={external_msg_id})")
+            logger.info(f"[WORKER] Filtro Anti-Duplicados: Mensaje duplicado de WhatsApp omitido en worker (wamid={external_msg_id})")
             db.close()
             return
+        else:
+            print(f"[WORKER] Filtro Anti-Duplicados: Mensaje nuevo aceptado (wamid={external_msg_id})")
+            logger.info(f"[WORKER] Filtro Anti-Duplicados: Mensaje nuevo aceptado (wamid={external_msg_id})")
 
         msg_type = msg.get("type", "text")
         content = ""
@@ -411,9 +418,11 @@ async def process_whatsapp_message(ctx, payload: dict):
             db.commit()
             db.refresh(contact)
             is_new = True
+            print(f"[WORKER] Contacto Nuevo Creado #{contact.id} ({contact.phone}). Chatbot Enabled: {contact.chatbot_enabled}")
+            logger.info(f"[WORKER] Contacto Nuevo Creado #{contact.id} ({contact.phone}). Chatbot Enabled: {contact.chatbot_enabled}")
         else:
-            # Respetar el estado de chatbot_enabled configurado en la BD / transferencia a humano
-            pass
+            print(f"[WORKER] Contacto Existente #{contact.id} ({contact.phone}). Chatbot Enabled: {contact.chatbot_enabled}")
+            logger.info(f"[WORKER] Contacto Existente #{contact.id} ({contact.phone}). Chatbot Enabled: {contact.chatbot_enabled}")
 
         # 3. Procesar Atribución de Meta Ads
         referral = msg.get("referral")

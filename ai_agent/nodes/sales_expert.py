@@ -91,11 +91,18 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
     # Enlazar herramientas puente al modelo de ventas
     llm_with_tools = llm.bind_tools(ALL_AI_TOOLS)
     
+    print(f"\n[AI_ENGINE] Invocando LLM Sales Expert ({ai_settings.SALES_EXPERT_MODEL}) vía OpenRouter...")
+    print(f"[AI_ENGINE] System Prompt (primeros 250 caracteres):\n{system_content[:250]}...")
+    
     try:
         response = await llm_with_tools.ainvoke(prompt_messages)
+        print(f"[AI_ENGINE] Invocación LLM exitosa. Respuesta obtenida: {str(response.content)[:120]}...")
         return {"messages": [response]}
     except Exception as e:
-        print(f"\n[EXCEPCION EN SALES EXPERT NODE]: {e}\n")
+        import traceback
+        err_tb = traceback.format_exc()
+        print(f"\n[FALLBACK] Excepción en sales_expert_node ({ai_settings.SALES_EXPERT_MODEL}): {e}")
+        print(f"[FALLBACK] Traceback completo:\n{err_tb}")
         # Fallback elegante si hay un fallo de API externo
         fallback_msg = AIMessage(
             content="¡Hola! En este momento estoy verificando la información en nuestro sistema. ¿Me podrías regalar un momento o indicarme tu disponibilidad de horario para atenderte?"
