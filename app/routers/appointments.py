@@ -407,3 +407,26 @@ async def update_appointment(
 
     return appointment
 
+
+@router.get("/holiday-override/{date_str}")
+def get_holiday_override(date_str: str, db: Session = Depends(get_db)):
+    from app.models.base import SystemSetting
+    sett = db.query(SystemSetting).filter(SystemSetting.key == f"holiday_override_{date_str}").first()
+    return {"date": date_str, "slots": sett.value if sett else ""}
+
+
+@router.post("/holiday-override/{date_str}")
+def save_holiday_override(date_str: str, payload: dict, db: Session = Depends(get_db)):
+    from app.models.base import SystemSetting
+    slots_str = payload.get("slots", "").strip()
+    sett = db.query(SystemSetting).filter(SystemSetting.key == f"holiday_override_{date_str}").first()
+    if not sett:
+        sett = SystemSetting(key=f"holiday_override_{date_str}", value=slots_str)
+        db.add(sett)
+    else:
+        sett.value = slots_str
+        db.add(sett)
+    db.commit()
+    return {"status": "success", "date": date_str, "slots": slots_str}
+
+
