@@ -63,8 +63,20 @@ class WhatsAppService:
                         logger.info(f"Mensaje enviado con éxito por WhatsApp a {to_phone} (Intento {attempt+1})")
                         try:
                             from app.services.audit_logger import add_audit_log
+                            from app.services.audit_trail import log_event_audit
+                            from app.models.base import Contact
                             msg_id = response_data.get("messages", [{}])[0].get("id", "N/A")
                             add_audit_log("success", "webhook", f"✅ Mensaje WhatsApp enviado a {to_phone}. Meta Message ID: {msg_id}")
+                            
+                            if db:
+                                c_aud = db.query(Contact).filter(Contact.phone == to_phone).first()
+                                log_event_audit(
+                                    db=db,
+                                    source="WHATSAPP_SERVICE",
+                                    event_type="HTTP_SEND_SUCCESS",
+                                    contact_id=c_aud.id if c_aud else None,
+                                    payload={"to": to_phone, "text": message_text[:200], "meta_msg_id": msg_id}
+                                )
                         except Exception:
                             pass
                         return response_data
