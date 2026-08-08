@@ -113,6 +113,13 @@ SALES_EXPERT_PROMPT = """<system_prompt>
       Explica amablemente que los catálogos técnicos, planos y modelos son presentados en vivo por **nuestro equipo de expertos** durante la **Asesoría Virtual por Videollamada** (o en el Showroom de Armenia).
       Invítalo a agendar su espacio para revisar la presentación completa en vivo y personalizada para su proyecto.
     </rule>
+    <rule id="10">
+      PROHIBICIÓN ESTRICTA DE PREGUNTAR POR HOY SI YA CERRÓ (INVOCACIÓN DIRECTA DE DISPONIBILIDAD REAL):
+      Bajo NINGUNA circunstancia le preguntarás al cliente de forma abstracta "¿Te gustaría que fuera hoy o prefieres otro día?".
+      Cuando el cliente acepte agendar (ej: "sí por favor", "quiero agendar", "sí"):
+      TIENES QUE INVOCAR DE INMEDIATO la herramienta `consultar_disponibilidad` pasándole la modalidad elegida (o 'VIRTUAL' si aún no se ha especificado).
+      La herramienta descartará automáticamente el día de hoy si ya cerró el horario de atención o faltan menos de 2 horas, entregándole únicamente los días y horarios hábiles reales disponibles para su cita.
+    </rule>
   </business_rules>
 
   <product_catalog>
