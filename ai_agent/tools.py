@@ -475,7 +475,6 @@ async def generar_y_enviar_propuesta_pdf(datos_cliente: Dict[str, Any]) -> str:
 ALL_AI_TOOLS = [
     fetch_user_context,
     consultar_disponibilidad,
-    check_availability,
     save_appointment,
     update_lead_status,
     request_human_handover,
