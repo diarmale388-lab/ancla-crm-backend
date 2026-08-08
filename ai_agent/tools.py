@@ -316,10 +316,24 @@ async def save_appointment(
         ).first()
         
         if not contact:
-            contact = Contact(first_name=user_name, phone=phone, chatbot_enabled=True)
+            words = user_name.strip().split() if user_name else ["Cliente"]
+            fn = words[0].capitalize()[:100]
+            ln = (" ".join([w.capitalize() for w in words[1:]]))[:100] if len(words) > 1 else ""
+            contact = Contact(first_name=fn, last_name=ln, email=email, phone=phone, chatbot_enabled=True)
             db.add(contact)
             db.commit()
             db.refresh(contact)
+        else:
+            # Actualizar nombre y correo real en la Ficha Técnica del CRM
+            if user_name and user_name.lower() not in ["cliente", "lead", "hola"] and not any(c.isdigit() for c in user_name):
+                words = user_name.strip().split()
+                contact.first_name = words[0].capitalize()[:100]
+                if len(words) > 1:
+                    contact.last_name = (" ".join([w.capitalize() for w in words[1:]]))[:100]
+            if email and "@" in email:
+                contact.email = email.strip().lower()[:255]
+            db.add(contact)
+            db.commit()
             
         # Generar datetime objeto
         try:

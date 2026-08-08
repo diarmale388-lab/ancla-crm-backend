@@ -42,19 +42,38 @@ def parse_and_update_contact_from_text(contact: Contact, raw_text: str, db: Sess
     Extrae dinámicamente todas las preguntas y respuestas del texto y actualiza el objeto Contact.
     Persiste en qualification_notes un bloque formateado completo con TODA la información entregada por el cliente.
     """
-    # Detección directa de emails en mensajes libres (ej: "Mi correo es patydure@gmail.com para que lo cambies")
+    updated_any = False
+
+    # Detección directa de emails en mensajes libres (ej: "Jairo Ernesto Garzon forero\njairogarzon972@gmail.com")
     email_pattern = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', raw_text)
     if email_pattern:
-        found_email = email_pattern.group().lower()
+        found_email = email_pattern.group().lower().strip()
         if not contact.email or contact.email != found_email:
             contact.email = found_email
-            db.add(contact)
-            db.commit()
+            updated_any = True
             logger.info(f"Correo de Contacto #{contact.id} actualizado automáticamente a: {found_email}")
+
+        # Intentar extraer el nombre completo del texto libre si el nombre actual es un apodo/username o está vacío
+        text_without_email = raw_text.replace(email_pattern.group(), "").strip()
+        clean_lines = [line.strip() for line in text_without_email.splitlines() if line.strip() and not line.strip().startswith("¡") and not line.strip().startswith("http")]
+        if clean_lines:
+            candidate_name = clean_lines[0]
+            words = [w for w in re.split(r'\s+', candidate_name) if w.isalpha()]
+            if 1 <= len(words) <= 5:
+                is_nickname = not contact.first_name or any(c.isdigit() for c in contact.first_name) or len(contact.first_name) < 3 or contact.first_name.lower() in ["cliente", "lead", "hola"]
+                if is_nickname:
+                    contact.first_name = words[0].capitalize()[:100]
+                    contact.last_name = (" ".join([w.capitalize() for w in words[1:]]))[:100]
+                    updated_any = True
+                    logger.info(f"Nombre de Contacto #{contact.id} actualizado a: {contact.first_name} {contact.last_name}")
+
+    if updated_any:
+        db.add(contact)
+        db.commit()
 
     parsed = parse_form_text_to_dict(raw_text)
     if not parsed:
-        return True if email_pattern else False
+        return updated_any
 
     updated = False
 
