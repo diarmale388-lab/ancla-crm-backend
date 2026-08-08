@@ -118,10 +118,40 @@ async def consultar_disponibilidad(fecha_solicitada: str, modalidad: str) -> Dic
             check_date = current_check_date + dt_tz.timedelta(days=day_offset)
             weekday = check_date.weekday() # 0: Lunes ... 4: Viernes, 5: Sábado, 6: Domingo
             
+            # Días Festivos Oficiales en Colombia 2026
+            COLOMBIAN_HOLIDAYS_2026 = [
+                "2026-01-01", "2026-01-12", "2026-03-23", "2026-04-02", "2026-04-03",
+                "2026-05-01", "2026-05-18", "2026-06-08", "2026-06-15", "2026-06-29",
+                "2026-07-20", "2026-08-07", "2026-08-17", "2026-10-12", "2026-11-02",
+                "2026-11-16", "2026-12-08", "2026-12-25"
+            ]
+            
+            check_date_str = check_date.strftime('%Y-%m-%d')
+            is_holiday = check_date_str in COLOMBIAN_HOLIDAYS_2026
+            
+            # Consultar si Liliana abrió excepcionalmente este festivo en la BD
+            holiday_override_slots = None
+            try:
+                from app.database import SessionLocal
+                from app.models.base import SystemSetting
+                db_sett = SessionLocal()
+                sett = db_sett.query(SystemSetting).filter(SystemSetting.key == f"holiday_override_{check_date_str}").first()
+                if sett and sett.value and sett.value.strip():
+                    holiday_override_slots = [s.strip() for s in sett.value.split(",") if s.strip()]
+                db_sett.close()
+            except Exception:
+                pass
+
+            # Si es Festivo y Liliana NO lo abrió en el panel de configuración -> Día CERRADO
+            if is_holiday and not holiday_override_slots:
+                continue
+
             if weekday == 6: # Domingo (Cerrado)
                 continue
                 
-            if weekday == 5: # Sábado (Mañana exclusivamente hasta 1 PM)
+            if holiday_override_slots:
+                candidate_slots = holiday_override_slots
+            elif weekday == 5: # Sábado (Mañana exclusivamente hasta 1 PM)
                 candidate_slots = ["10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM", "12:00 PM"]
             else: # Lunes a Viernes (Mañana y Tarde)
                 candidate_slots = ["10:00 AM", "11:00 AM", "12:00 PM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM"] if is_presencial else ["10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM", "02:00 PM", "02:30 PM", "03:00 PM", "04:00 PM"]
