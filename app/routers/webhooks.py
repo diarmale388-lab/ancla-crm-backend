@@ -164,6 +164,11 @@ async def receive_meta_webhook(request: Request, db: Session = Depends(get_db)):
     """
     Endpoint centralizado para webhooks de Meta (WhatsApp, Instagram, Facebook y Lead Ads).
     """
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
     print(f"\n[WEBHOOK] Payload recibido: {payload}")
     logger.info(f"[WEBHOOK] Payload recibido: {payload}")
 
