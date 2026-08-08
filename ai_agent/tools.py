@@ -114,7 +114,7 @@ async def consultar_disponibilidad(fecha_solicitada: str, modalidad: str) -> Dic
         current_check_date = target_date
         valid_slots = []
         
-        for day_offset in range(7):
+        for day_offset in range(14):
             check_date = current_check_date + dt_tz.timedelta(days=day_offset)
             weekday = check_date.weekday() # 0: Lunes ... 4: Viernes, 5: Sábado, 6: Domingo
             
