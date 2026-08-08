@@ -50,8 +50,14 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
         f"[CONTEXTO DE SESIÓN]\n- Teléfono cliente: {phone}\n- Nombre cliente: {user_name if user_name else 'No especificado aún'}"
         f"{lead_context_str}"
     )
-    
-    prompt_messages = [SystemMessage(content=system_content)] + messages
+    # Sanitización de historial para eliminar plantillas antiguas redundantes y mensajes duplicados
+    try:
+        from app.services.history_sanitizer import sanitize_chat_history_for_llm
+        sanitized_history = sanitize_chat_history_for_llm(messages)
+    except Exception:
+        sanitized_history = messages
+
+    prompt_messages = [SystemMessage(content=system_content)] + sanitized_history
 
     
     api_key = ai_settings.OPENROUTER_API_KEY.strip() or "sk-or-v1-dummy-key-for-testing"
