@@ -549,6 +549,73 @@ async def update_contact_details(
         "proposal_notes": contact.proposal_notes
     }}
 
+@router.post("/{contact_id}/ai-summary")
+async def generate_ai_chat_summary(
+    contact_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Any:
+    """
+    Genera un resumen ejecutivo de la conversación de WhatsApp usando la IA (Sofi AI)
+    y actualiza la Ficha Técnica 360 del prospecto.
+    """
+    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contacto no encontrado")
+
+    # Obtener historial reciente de mensajes
+    msgs = db.query(Message).filter(Message.contact_id == contact_id).order_by(Message.created_at.desc()).limit(30).all()
+    msgs.reverse()
+
+    if not msgs:
+        summary_text = "🎯 Propósito: Prospecto recién registrado desde Meta Ads.\n📍 Ubicación Lote: En definición.\n💰 Presupuesto: En definición.\n🗣️ Detalle: Sin conversación previa registrada en WhatsApp."
+    else:
+        chat_text = "\n".join([f"{'CLIENTE' if m.sender_type == SenderType.CLIENT else 'SOFI_AI/ASESOR'}: {m.content}" for m in msgs])
+        
+        api_key = os.getenv("OPENROUTER_API_KEY", "")
+        model = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat")
+        
+        prompt = f"""Eres un analista comercial experto de ANCLA Special Projects.
+Analiza la siguiente conversación de WhatsApp con el cliente {contact.first_name or 'Cliente'} y genera un RESUMEN EJECUTIVO COMERCIAL estructurado en exactamente 4 viñetas breves y claras:
+
+1. 🎯 Propósito / Proyecto de Interés: (ej. Casa Campestre 120m2, Glamping, Llave en mano)
+2. 📍 Terreno / Ubicación Lote: (ej. Lote propio en Nemocón Cundinamarca, buscando lote)
+3. 💰 Presupuesto & Financiamiento: (ej. $180M COP, crédito aprobado / recursos propios)
+4. 🗣️ Puntos Clave & Próximos Pasos: (ej. Cliente solicitó plano y cotización para el lunes)
+
+Conversación:
+{chat_text}"""
+
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                res = await client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.3
+                    }
+                )
+                if res.status_code == 200:
+                    data = res.json()
+                    summary_text = data["choices"][0]["message"]["content"].strip()
+                else:
+                    summary_text = f"🎯 Propósito: {contact.interest_product or 'Vivienda Campestre'}\n📍 Ubicación Lote: {contact.lot_city or 'En definición'}\n💰 Presupuesto: ${contact.estimated_budget or 0:,.0f} COP\n🗣️ Detalle: Cliente registrado. Conversación en WhatsApp activa."
+        except Exception as e:
+            logger.error(f"Error generando resumen IA: {e}")
+            summary_text = f"🎯 Propósito: {contact.interest_product or 'Vivienda Campestre'}\n📍 Ubicación Lote: {contact.lot_city or 'En definición'}\n💰 Presupuesto: ${contact.estimated_budget or 0:,.0f} COP\n🗣️ Detalle: Cliente registrado."
+
+    contact.qualification_notes = summary_text
+    db.add(contact)
+    db.commit()
+    db.refresh(contact)
+
+    return {"status": "success", "summary": summary_text}
+
 class BitacoraCreatePayload(BaseModel):
     note_type: str = "LLAMADA" # LLAMADA, VIRTUAL, SHOWROOM, SEGUIMIENTO
     content: str
