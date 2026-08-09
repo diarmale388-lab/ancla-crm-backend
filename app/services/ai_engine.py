@@ -104,14 +104,7 @@ class AIEngine:
         if not contact or not contact.chatbot_enabled:
             return None
 
-        # Preservar e inyectar contexto de estado de agendamiento si existe
-        context_prefix = ""
-        if contact.scheduling_state == "MODALITY_VIRTUAL":
-            context_prefix = "[CONTEXTO DE SISTEMA: El cliente YA eligió previamente la modalidad 'ASESORÍA VIRTUAL'. Si el mensaje pide agendar o da un día/jornada, NO preguntes la modalidad; invoca directamente consultar_disponibilidad para Asesoría Virtual].\n\n"
-        elif contact.scheduling_state == "MODALITY_PRESENCIAL":
-            context_prefix = "[CONTEXTO DE SISTEMA: El cliente YA eligió previamente la modalidad 'VISITA PRESENCIAL EN SHOWROOM ARMENIA'. Si el mensaje pide agendar o da un día/jornada, NO preguntes la modalidad; invoca directamente consultar_disponibilidad para Visita Presencial].\n\n"
-
-        full_message_payload = f"{context_prefix}{last_message}" if context_prefix else last_message
+        full_message_payload = last_message
 
         from ai_agent.graph import sofi_ai_agent
         from langchain_core.messages import HumanMessage, AIMessage
@@ -126,7 +119,9 @@ class AIEngine:
             elif m.sender_type == SenderType.AI:
                 langchain_msgs.append(AIMessage(content=m.content or ""))
 
-        if not langchain_msgs or (hasattr(langchain_msgs[-1], "content") and langchain_msgs[-1].content != full_message_payload):
+        if langchain_msgs and isinstance(langchain_msgs[-1], HumanMessage):
+            langchain_msgs[-1] = HumanMessage(content=full_message_payload)
+        elif not langchain_msgs or not isinstance(langchain_msgs[-1], HumanMessage):
             langchain_msgs.append(HumanMessage(content=full_message_payload))
 
         try:
@@ -155,31 +150,33 @@ class AIEngine:
             final_state = await sofi_ai_agent.ainvoke(input_state, config=config)
             messages = final_state.get("messages", [])
             for msg in reversed(messages):
-                # Descartar mensajes intermedios que contengan llamadas a herramientas (tool_calls)
+                # Descartar mensajes intermedios de herramientas o llamadas pendietes
                 tool_calls = getattr(msg, "tool_calls", None)
                 if tool_calls and len(tool_calls) > 0:
                     continue
-                    
-                if hasattr(msg, "type") and msg.type == "ai" and hasattr(msg, "content") and str(msg.content).strip():
-                    ai_res_text = str(msg.content).strip()
+                if getattr(msg, "type", "") == "tool":
+                    continue
+                
+                content_val = getattr(msg, "content", "")
+                if isinstance(content_val, list):
+                    text_parts = []
+                    for item in content_val:
+                        if isinstance(item, dict):
+                            text_parts.append(item.get("text", ""))
+                        elif isinstance(item, str):
+                            text_parts.append(item)
+                    content_str = "".join(text_parts).strip()
+                else:
+                    content_str = str(content_val or "").strip()
+
+                if content_str and content_str.lower() != "none":
                     try:
-                        safe_log = ai_res_text[:120].encode('ascii', errors='replace').decode('ascii')
+                        safe_log = content_str[:120].encode('ascii', errors='replace').decode('ascii')
                         print(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente: '{safe_log}...'")
                     except Exception:
                         pass
                     logger.info(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente")
-                    return ai_res_text
-                elif isinstance(msg, dict) and msg.get("role") == "assistant" and str(msg.get("content", "")).strip():
-                    if msg.get("tool_calls"):
-                        continue
-                    ai_res_text = str(msg.get("content")).strip()
-                    try:
-                        safe_log = ai_res_text[:120].encode('ascii', errors='replace').decode('ascii')
-                        print(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente (dict): '{safe_log}...'")
-                    except Exception:
-                        pass
-                    logger.info(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente (dict)")
-                    return ai_res_text
+                    return content_str
             print("[AI_ENGINE] Advertencia: No se encontró ningún mensaje válido en el estado final del agente.")
             return None
 
