@@ -55,6 +55,18 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
         contact_active_appointment=contact_active_appointment
     )
 
+    # Determinar si es el primer mensaje del cliente o conversación en curso
+    human_count = sum(1 for m in messages if getattr(m, 'type', '') == 'human' or getattr(m, 'sender_type', '') in ['contact', 'user'])
+    is_first_interaction = human_count <= 1
+
+    interaction_instruction = (
+        "\n\n[INSTRUCCIÓN DE CONTROL DE CONVERSACIÓN - PRIMER CONTACTO]:\n"
+        "⚠️ ESTE ES EL PRIMER MENSAJE QUE EL CLIENTE ENVÍA EN EL CHAT. ES ABSOLUTAMENTE OBLIGATORIO SALUDAR CÁLIDAMENTE Y DAR LA BIENVENIDA A ANCLA SPECIAL PROJECTS ANTES DE RESPONDER O AGENDAR."
+        if is_first_interaction else
+        "\n\n[INSTRUCCIÓN DE CONTROL DE CONVERSACIÓN - CONTINUACIÓN DE CHAT]:\n"
+        "Este mensaje es la continuación de una conversación en curso. NO REPITAS el saludo inicial ni la bienvenida para mantener el diálogo natural."
+    )
+
     # Construir mensaje de sistema con contexto dinámico y fecha actual
     system_content = (
         f"{formatted_prompt}\n\n"
@@ -62,6 +74,7 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
         f"⚠️ NUNCA OFREZCAS DÍAS NI HORAS ANTERIORES A ESTA FECHA/HORA.\n\n"
         f"[CONTEXTO DE SESIÓN]\n- Teléfono cliente: {phone}\n- Nombre cliente: {user_name if user_name else 'No especificado aún'}"
         f"{lead_context_str}"
+        f"{interaction_instruction}"
     )
     # Sanitización de historial para eliminar plantillas antiguas redundantes y mensajes duplicados
     try:
