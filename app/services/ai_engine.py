@@ -156,6 +156,8 @@ class AIEngine:
                     continue
                 if getattr(msg, "type", "") == "tool":
                     continue
+                if getattr(msg, "type", "") != "ai" and not isinstance(msg, AIMessage):
+                    continue
                 
                 content_val = getattr(msg, "content", "")
                 if isinstance(content_val, list):
