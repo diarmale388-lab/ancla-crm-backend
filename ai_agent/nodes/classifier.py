@@ -79,7 +79,7 @@ async def classifier_node(state: AgentState) -> Dict[str, Any]:
     python_extracted = _extract_meta_ads_python(last_message)
     if python_extracted:
         meta_ads_lead_data.update(python_extracted)
-        if "nombre" in python_extracted and not user_name:
+        if "nombre" in python_extracted and python_extracted["nombre"]:
             user_name = python_extracted["nombre"]
 
     # 2. Evaluación silenciosa vía LLM o Heurística
