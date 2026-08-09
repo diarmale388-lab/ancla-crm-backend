@@ -453,6 +453,12 @@ class ContactDetailsPayload(BaseModel):
     preferred_contact_method: Optional[str] = None
     advisor_status: Optional[str] = None
     client_type: Optional[str] = None
+    commercial_viability: Optional[str] = None
+    has_confirmed_budget: Optional[bool] = None
+    contact_response_status: Optional[str] = None
+    quoted_value: Optional[float] = None
+    proposal_pdf_url: Optional[str] = None
+    proposal_notes: Optional[str] = None
 
 @router.patch("/{contact_id}/details")
 async def update_contact_details(
@@ -481,6 +487,12 @@ async def update_contact_details(
     if payload.preferred_contact_method is not None: contact.preferred_contact_method = payload.preferred_contact_method
     if payload.advisor_status is not None: contact.advisor_status = payload.advisor_status
     if payload.client_type is not None: contact.client_type = payload.client_type
+    if payload.commercial_viability is not None: contact.commercial_viability = payload.commercial_viability
+    if payload.has_confirmed_budget is not None: contact.has_confirmed_budget = payload.has_confirmed_budget
+    if payload.contact_response_status is not None: contact.contact_response_status = payload.contact_response_status
+    if payload.quoted_value is not None: contact.quoted_value = payload.quoted_value
+    if payload.proposal_pdf_url is not None: contact.proposal_pdf_url = payload.proposal_pdf_url
+    if payload.proposal_notes is not None: contact.proposal_notes = payload.proposal_notes
 
     db.add(contact)
     db.commit()
@@ -503,7 +515,13 @@ async def update_contact_details(
             "qualification_notes": contact.qualification_notes,
             "preferred_contact_method": contact.preferred_contact_method,
             "advisor_status": contact.advisor_status,
-            "client_type": contact.client_type
+            "client_type": contact.client_type,
+            "commercial_viability": contact.commercial_viability,
+            "has_confirmed_budget": contact.has_confirmed_budget,
+            "contact_response_status": contact.contact_response_status,
+            "quoted_value": contact.quoted_value,
+            "proposal_pdf_url": contact.proposal_pdf_url,
+            "proposal_notes": contact.proposal_notes
         }
     }
     await manager.broadcast(ws_payload)
@@ -522,8 +540,80 @@ async def update_contact_details(
         "qualification_notes": contact.qualification_notes,
         "preferred_contact_method": contact.preferred_contact_method,
         "advisor_status": contact.advisor_status,
-        "client_type": contact.client_type
+        "client_type": contact.client_type,
+        "commercial_viability": contact.commercial_viability,
+        "has_confirmed_budget": contact.has_confirmed_budget,
+        "contact_response_status": contact.contact_response_status,
+        "quoted_value": contact.quoted_value,
+        "proposal_pdf_url": contact.proposal_pdf_url,
+        "proposal_notes": contact.proposal_notes
     }}
+
+class BitacoraCreatePayload(BaseModel):
+    note_type: str = "LLAMADA" # LLAMADA, VIRTUAL, SHOWROOM, SEGUIMIENTO
+    content: str
+    author_name: Optional[str] = "Liliana / Asesor"
+
+@router.post("/{contact_id}/bitacora")
+async def add_bitacora_note(
+    contact_id: int,
+    payload: BitacoraCreatePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Any:
+    """
+    Agrega una nota a la bitácora comercial de atención del asesor.
+    """
+    from app.models.base import AdvisorBitacoraNote
+    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contacto no encontrado")
+
+    note = AdvisorBitacoraNote(
+        contact_id=contact.id,
+        user_id=current_user.id,
+        author_name=payload.author_name or current_user.full_name or "Asesor",
+        note_type=payload.note_type,
+        content=payload.content
+    )
+    db.add(note)
+    db.commit()
+    db.refresh(note)
+
+    return {
+        "status": "success",
+        "note": {
+            "id": note.id,
+            "note_type": note.note_type,
+            "content": note.content,
+            "author_name": note.author_name,
+            "created_at": note.created_at
+        }
+    }
+
+@router.get("/{contact_id}/bitacora")
+def get_bitacora_notes(
+    contact_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Any:
+    """
+    Obtiene el historial cronológico de la bitácora comercial del prospecto.
+    """
+    from app.models.base import AdvisorBitacoraNote
+    notes = db.query(AdvisorBitacoraNote).filter(
+        AdvisorBitacoraNote.contact_id == contact_id
+    ).order_by(desc(AdvisorBitacoraNote.created_at)).all()
+
+    return [
+        {
+            "id": n.id,
+            "note_type": n.note_type,
+            "content": n.content,
+            "author_name": n.author_name,
+            "created_at": n.created_at
+        } for n in notes
+    ]
 
 class AdvisorStatusPayload(BaseModel):
     advisor_status: str

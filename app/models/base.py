@@ -119,16 +119,24 @@ class Contact(Base):
     scheduling_state: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     proposed_datetime: Mapped[Optional[dt_module.datetime]] = mapped_column(DateTime, nullable=True)
 
-    # Maduración y Calificación Avanzada (ANCLA Special Projects)
+    # Maduración y Calificación Avanzada 360° (ANCLA Special Projects)
     interest_product: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # Glamping, Flex Home, Living, Llave en Mano
     lot_status: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # Lote Propio, Buscando Lote
     lot_city: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # Armenia, Filandia, etc.
     estimated_budget: Mapped[Optional[float]] = mapped_column(Float, default=0.0, nullable=True) # COP value
-    qualification_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True) # VIP, Explorador, Curioso
+    qualification_level: Mapped[Optional[str]] = mapped_column(String(50), default="WARM", nullable=True) # VIP, HOT, WARM, COLD, DISCARDED
     qualification_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     preferred_contact_method: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # Llamada tradicional, WhatsApp, etc.
-    advisor_status: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # CONNECTED, SHOWROOM_VISITED, NO_ANSWER, etc.
+    advisor_status: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # CONNECTED, SHOWROOM_VISITED, NO_ANSWER, PROPOSAL_SENT
     client_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # Persona Natural, Empresario, Inversionista
+
+    # Campos Extendidos Ficha Técnica 360° & Control de Ventas
+    commercial_viability: Mapped[Optional[str]] = mapped_column(String(50), default="HIGH", nullable=True) # HIGH, MEDIUM, LOW, CLOSED
+    has_confirmed_budget: Mapped[Optional[bool]] = mapped_column(Boolean, default=True, nullable=True)
+    contact_response_status: Mapped[Optional[str]] = mapped_column(String(50), default="ANSWERED", nullable=True) # ANSWERED, NO_ANSWER, BUSY, RESCHEDULED
+    quoted_value: Mapped[Optional[float]] = mapped_column(Float, default=0.0, nullable=True) # COP value proposal
+    proposal_pdf_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    proposal_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     # Habeas Data (Colombia Ley 1581 de 2012)
     habeas_data_authorized: Mapped[Optional[bool]] = mapped_column(Boolean, default=None, nullable=True)
@@ -144,6 +152,7 @@ class Contact(Base):
     pipeline_stage: Mapped[Optional["PipelineStage"]] = relationship(back_populates="contacts")
     messages: Mapped[List["Message"]] = relationship(back_populates="contact")
     appointments: Mapped[List["Appointment"]] = relationship(back_populates="contact", cascade="all, delete-orphan")
+    bitacora_notes: Mapped[List["AdvisorBitacoraNote"]] = relationship(back_populates="contact", cascade="all, delete-orphan")
 
 
 class Message(Base):
@@ -331,6 +340,25 @@ class AuditCorrection(Base):
     corrected_response: Mapped[str] = mapped_column(Text, nullable=False)
     is_approved: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[dt_module.datetime] = mapped_column(DateTime, default=dt_module.datetime.utcnow, nullable=False)
+
+
+class AdvisorBitacoraNote(Base):
+    """
+    Bitácora Comercial de Atención del Asesor (Notas de llamadas, reuniones y seguimiento).
+    """
+    __tablename__ = "advisor_bitacora_notes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    author_name: Mapped[str] = mapped_column(String(100), default="Liliana / Asesor", nullable=False)
+    note_type: Mapped[str] = mapped_column(String(50), default="LLAMADA", nullable=False) # LLAMADA, VIRTUAL, SHOWROOM, SEGUIMIENTO
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[dt_module.datetime] = mapped_column(DateTime, default=dt_module.datetime.utcnow, nullable=False)
+
+    # Relación
+    contact: Mapped["Contact"] = relationship(back_populates="bitacora_notes")
+
 
 
 
