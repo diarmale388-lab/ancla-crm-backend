@@ -170,6 +170,8 @@ class AIEngine:
                     content_str = str(content_val or "").strip()
 
                 if content_str and content_str.lower() != "none":
+                    if "so tomorrow is" in content_str.lower() or (len(content_str) < 90 and content_str.startswith("2026-")):
+                        continue
                     try:
                         safe_log = content_str[:120].encode('ascii', errors='replace').decode('ascii')
                         print(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente: '{safe_log}...'")
