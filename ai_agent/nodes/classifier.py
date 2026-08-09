@@ -95,9 +95,22 @@ async def classifier_node(state: AgentState) -> Dict[str, Any]:
                 
             data = json.loads(content)
             raw_intent = data.get("intent", "SALES_CONVERSATION")
-            if raw_intent == "HUMAN_HANDOVER":
-                intent = "HUMAN_HANDOVER"
-                requires_human = True
+            
+            # Salvaguarda: si el mensaje menciona modalidad de asesoría/cita, NUNCA es HUMAN_HANDOVER
+            lowered_last = last_message.lower().strip()
+            is_modality_selection = any(m in lowered_last for m in ["virtual", "presencial", "showroom", "llamada", "asesoría", "asesoria", "cita", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo", "imposible", "no puedo"])
+            
+            if raw_intent == "HUMAN_HANDOVER" and not is_modality_selection:
+                # Solo si pide un ser humano explícito (ej: "persona real", "humano", "hablar con alguien real")
+                if any(w in lowered_last for w in ["persona real", "humano", "hablar con un humano", "no me responde un bot", "quiero una persona"]):
+                    intent = "HUMAN_HANDOVER"
+                    requires_human = True
+                else:
+                    intent = "SALES_CONVERSATION"
+                    requires_human = False
+            else:
+                intent = "SALES_CONVERSATION"
+                requires_human = False
             
             llm_lead_data = data.get("meta_ads_lead_data")
             if isinstance(llm_lead_data, dict):
