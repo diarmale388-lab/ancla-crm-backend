@@ -344,7 +344,7 @@ class AuditCorrection(Base):
 
 class AdvisorBitacoraNote(Base):
     """
-    Bitácora Comercial de Atención del Asesor (Notas de llamadas, reuniones y seguimiento).
+    Bitácora Comercial Pro de Atención del Asesor (Notas estructuradas de llamadas, reuniones y seguimiento).
     """
     __tablename__ = "advisor_bitacora_notes"
 
@@ -353,6 +353,11 @@ class AdvisorBitacoraNote(Base):
     user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     author_name: Mapped[str] = mapped_column(String(100), default="Liliana / Asesor", nullable=False)
     note_type: Mapped[str] = mapped_column(String(50), default="LLAMADA", nullable=False) # LLAMADA, VIRTUAL, SHOWROOM, SEGUIMIENTO
+    call_result: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # INTERESTED, RESCHEDULE, NO_ANSWER, SHOWROOM_CONFIRMED, QUOTATION_REQUESTED, REJECTED
+    construction_timeline: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # IMMEDIATE, 1_TO_3_MONTHS, 3_TO_6_MONTHS, 6_PLUS_MONTHS
+    detected_objection: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # BUDGET, NO_LOT, FREIGHT_DISTANCE, PERMITS, TIMELINE, NONE
+    next_action: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # RECALL, SEND_QUOTATION, MEET_VIRTUAL, SHOWROOM_VISIT, WAIT_CLIENT
+    next_action_date: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # Timestamp ISO o legible de recordatorio
     content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[dt_module.datetime] = mapped_column(DateTime, default=dt_module.datetime.utcnow, nullable=False)
 

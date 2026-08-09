@@ -553,6 +553,11 @@ class BitacoraCreatePayload(BaseModel):
     note_type: str = "LLAMADA" # LLAMADA, VIRTUAL, SHOWROOM, SEGUIMIENTO
     content: str
     author_name: Optional[str] = "Liliana / Asesor"
+    call_result: Optional[str] = None
+    construction_timeline: Optional[str] = None
+    detected_objection: Optional[str] = None
+    next_action: Optional[str] = None
+    next_action_date: Optional[str] = None
 
 @router.post("/{contact_id}/bitacora")
 async def add_bitacora_note(
@@ -562,7 +567,7 @@ async def add_bitacora_note(
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
-    Agrega una nota a la bitácora comercial de atención del asesor.
+    Agrega una nota estructurada a la bitácora comercial de atención del asesor.
     """
     from app.models.base import AdvisorBitacoraNote
     contact = db.query(Contact).filter(Contact.id == contact_id).first()
@@ -574,6 +579,11 @@ async def add_bitacora_note(
         user_id=current_user.id,
         author_name=payload.author_name or current_user.full_name or "Asesor",
         note_type=payload.note_type,
+        call_result=payload.call_result,
+        construction_timeline=payload.construction_timeline,
+        detected_objection=payload.detected_objection,
+        next_action=payload.next_action,
+        next_action_date=payload.next_action_date,
         content=payload.content
     )
     db.add(note)
@@ -585,6 +595,11 @@ async def add_bitacora_note(
         "note": {
             "id": note.id,
             "note_type": note.note_type,
+            "call_result": note.call_result,
+            "construction_timeline": note.construction_timeline,
+            "detected_objection": note.detected_objection,
+            "next_action": note.next_action,
+            "next_action_date": note.next_action_date,
             "content": note.content,
             "author_name": note.author_name,
             "created_at": note.created_at
@@ -609,6 +624,11 @@ def get_bitacora_notes(
         {
             "id": n.id,
             "note_type": n.note_type,
+            "call_result": n.call_result,
+            "construction_timeline": n.construction_timeline,
+            "detected_objection": n.detected_objection,
+            "next_action": n.next_action,
+            "next_action_date": n.next_action_date,
             "content": n.content,
             "author_name": n.author_name,
             "created_at": n.created_at
