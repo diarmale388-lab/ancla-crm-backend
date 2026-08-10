@@ -463,6 +463,7 @@ class ContactDetailsPayload(BaseModel):
     proposal_pdf_url: Optional[str] = None
     proposal_notes: Optional[str] = None
 
+@router.put("/{contact_id}/details")
 @router.patch("/{contact_id}/details")
 async def update_contact_details(
     contact_id: int,
