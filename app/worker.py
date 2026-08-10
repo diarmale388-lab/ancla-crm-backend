@@ -302,13 +302,24 @@ async def process_whatsapp_message(ctx, payload: dict):
             drive_id, file_bytes, mime_type = await download_and_upload_media_to_gdrive(media_id, db)
             target_id = drive_id if drive_id else media_id
             
-            # Transcribir audio asíncronamente usando Gemini
+            # Transcribir audio directamente desde bytes en memoria o fallback a descarga directa
             transcription = None
             if file_bytes:
-                transcription = await transcribe_whatsapp_audio(file_bytes, mime_type, db)
+                from app.services.transcription import transcribe_audio_bytes
+                transcription = await transcribe_audio_bytes(file_bytes, db=db)
                 
+            if not transcription and media_id:
+                try:
+                    local_path = await whatsapp_service.download_media(media_id, db)
+                    if local_path:
+                        from app.services.transcription import transcribe_audio_file
+                        transcription = await transcribe_audio_file(local_path, db=db)
+                except Exception as down_e:
+                    logger.error(f"Fallback download_media error: {down_e}")
+
             if transcription:
                 content = transcription
+                logger.info(f"🎤 [AUDIO TRANSCRIPTO] para {from_phone}: '{transcription}'")
             else:
                 content = f"[Media ID: {target_id}]\n[🎙️ Nota de voz recibida]"
         elif msg_type in ["image", "video", "document"]:
@@ -387,18 +398,6 @@ async def process_whatsapp_message(ctx, payload: dict):
         db_msg_type = MessageType.TEXT
         if msg_type in ["audio", "voice"]:
             db_msg_type = MessageType.AUDIO
-            if media_id:
-                logger.info(f"Procesando transcripción de audio para {contact.phone} (Media ID: {media_id})...")
-                try:
-                    local_audio_path = await whatsapp_service.download_media(media_id, db)
-                    if local_audio_path:
-                        from app.services.transcription import transcribe_audio_file
-                        transcript = await transcribe_audio_file(local_audio_path)
-                        if transcript:
-                            content = transcript
-                            logger.info(f"Audio transcripto con éxito para {contact.phone}: '{content}'")
-                except Exception as audio_err:
-                    logger.error(f"Error procesando transcripción de audio: {audio_err}")
         elif msg_type == "document":
             db_msg_type = MessageType.DOCUMENT
         elif msg_type == "video":
@@ -407,12 +406,13 @@ async def process_whatsapp_message(ctx, payload: dict):
             db_msg_type = MessageType.IMAGE
 
         # 5. Guardar mensaje recibido en BD
+        db_content = f"[🎙️ Nota de voz]: {content}" if msg_type in ["audio", "voice"] and not content.startswith("[Media ID:") else content
         db_msg = Message(
             contact_id=contact.id,
             sender_type=SenderType.CONTACT,
             channel=ChannelType.WHATSAPP,
             message_type=db_msg_type,
-            content=content,
+            content=db_content,
             status=MessageStatus.DELIVERED,
             external_message_id=external_msg_id
         )
@@ -722,7 +722,7 @@ async def process_whatsapp_message(ctx, payload: dict):
                 logger.info(f"Debounce: Omitiendo respuesta parcial de mensaje ID {db_msg.id} porque {contact.phone} envió un mensaje posterior.")
                 return
 
-            # Concatenar mensajes recientes de los últimos 60 segundos
+            # Concatenar mensajes recientes de los últimos 60 segundos limpiando prefijos
             import datetime as dt_debounce
             recent_msgs = db.query(Message).filter(
                 Message.contact_id == contact.id,
@@ -730,7 +730,14 @@ async def process_whatsapp_message(ctx, payload: dict):
                 Message.created_at >= db_msg.created_at - dt_debounce.timedelta(seconds=60)
             ).order_by(Message.created_at.asc()).all()
 
-            accumulated_text = " ".join([m.content for m in recent_msgs if m.content]).strip() or content
+            cleaned_msgs = []
+            for m in recent_msgs:
+                c_text = m.content or ""
+                if c_text.startswith("[🎙️ Nota de voz]: "):
+                    c_text = c_text.replace("[🎙️ Nota de voz]: ", "").strip()
+                if c_text and not c_text.startswith("[Media ID:"):
+                    cleaned_msgs.append(c_text)
+            accumulated_text = " ".join(cleaned_msgs).strip() or content
 
             ai_reply = await ai_engine.generate_autopilot_reply(
                 db=db,
