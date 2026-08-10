@@ -7,26 +7,19 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-async def transcribe_audio_file(file_path: str) -> str:
+async def transcribe_audio_bytes(audio_bytes: bytes) -> str:
     """
-    Transcribe un archivo de audio (.ogg, .opus, .mp3, .wav, .m4a) enviado por WhatsApp a texto en español.
-    Utiliza OpenRouter Gemini Multimodal Audio API, Google Gemini API o OpenAI Whisper API.
+    Transcribe bytes de audio (.ogg, .opus, .mp3, .wav, .m4a) recibido por WhatsApp a texto en español.
+    Utiliza OpenRouter Gemini Multimodal Audio API o OpenAI Whisper API.
     """
-    if not os.path.exists(file_path):
-        logger.error(f"Transcripción cancelada: El archivo {file_path} no existe.")
+    if not audio_bytes:
+        logger.error("Transcripción cancelada: Bytes de audio vacíos.")
         return ""
 
     try:
-        with open(file_path, "rb") as f:
-            audio_bytes = f.read()
-
-        if not audio_bytes:
-            logger.error("Archivo de audio vacío.")
-            return ""
-
         b64_audio = base64.b64encode(audio_bytes).decode("utf-8")
         
-        # 1. Intentar con OpenRouter (Google Gemini 2.5 Flash Multimodal Audio)
+        # 1. OpenRouter (Google Gemini 2.5 Flash Multimodal Audio)
         openrouter_key = os.getenv("OPENROUTER_API_KEY") or getattr(settings, "OPENROUTER_API_KEY", "")
         if openrouter_key:
             try:
@@ -45,7 +38,7 @@ async def transcribe_audio_file(file_path: str) -> str:
                             "content": [
                                 {
                                     "type": "text", 
-                                    "text": "Transcribe exactamente el contenido de este audio de voz en español. Devuelve ÚNICAMENTE el texto transcripto, sin explicaciones ni comillas adicionales."
+                                    "text": "Transcribe exactamente el contenido de este audio de voz en español. Devuelve ÚNICAMENTE el texto transcripto, sin comillas ni aclaraciones."
                                 },
                                 {
                                     "type": "image_url",
@@ -70,13 +63,13 @@ async def transcribe_audio_file(file_path: str) -> str:
             except Exception as e_or:
                 logger.error(f"Error en OpenRouter Audio transcription: {e_or}")
 
-        # 2. Intentar con OpenAI Whisper API (si está configurada)
+        # 2. OpenAI Whisper API
         openai_key = os.getenv("OPENAI_API_KEY") or getattr(settings, "OPENAI_API_KEY", "")
         if openai_key:
             try:
                 url = "https://api.openai.com/v1/audio/transcriptions"
                 headers = {"Authorization": f"Bearer {openai_key}"}
-                files = {"file": (os.path.basename(file_path), audio_bytes, "audio/ogg")}
+                files = {"file": ("audio.ogg", audio_bytes, "audio/ogg")}
                 data = {"model": "whisper-1", "language": "es"}
                 async with httpx.AsyncClient() as client:
                     res = await client.post(url, headers=headers, files=files, data=data, timeout=30.0)
@@ -89,6 +82,23 @@ async def transcribe_audio_file(file_path: str) -> str:
                 logger.error(f"Error transcribiendo con OpenAI Whisper: {e_w}")
 
     except Exception as e:
-        logger.error(f"Error general en transcribe_audio_file: {e}")
+        logger.error(f"Error general en transcribe_audio_bytes: {e}")
 
     return ""
+
+
+async def transcribe_audio_file(file_path: str) -> str:
+    """
+    Transcribe un archivo de audio (.ogg, .opus, .mp3, .wav, .m4a) leyendo los bytes de disco.
+    """
+    if not os.path.exists(file_path):
+        logger.error(f"Transcripción cancelada: El archivo {file_path} no existe.")
+        return ""
+
+    try:
+        with open(file_path, "rb") as f:
+            audio_bytes = f.read()
+        return await transcribe_audio_bytes(audio_bytes)
+    except Exception as e:
+        logger.error(f"Error leyendo archivo en transcribe_audio_file: {e}")
+        return ""

@@ -154,83 +154,19 @@ async def download_and_upload_media_to_gdrive(media_id: str, db: Session) -> tup
 
 async def transcribe_whatsapp_audio(file_bytes: bytes, mime_type: str, db: Session) -> Optional[str]:
     """
-    Transcribe una nota de voz/audio recibida en WhatsApp usando el Speech-to-Text de Google Gemini.
+    Transcribe una nota de voz/audio recibida en WhatsApp usando el Speech-to-Text de Google Gemini multimodal en OpenRouter.
     """
     if not file_bytes:
         return None
-        
     try:
-        import base64
-        import httpx
-        from app.models.base import SystemSetting
-        
-        # 1. Obtener la clave API de Gemini
-        api_key = None
-        db_key = db.query(SystemSetting).filter(SystemSetting.key == "gemini_api_key").first()
-        if db_key and db_key.value:
-            api_key = db_key.value
-        if not api_key:
-            api_key = settings.GEMINI_API_KEY
-            
-        if not api_key:
-            logger.error("No se pudo obtener la clave API para la transcripción del audio.")
-            return None
-            
-        # Si es una clave de OpenRouter, usaremos la clave nativa de Gemini
-        if api_key.startswith("sk-or-v1"):
-            api_key = settings.GEMINI_API_KEY
-            
-        if not api_key:
-            logger.error("No hay una clave API válida de Gemini para el transcriptor nativo.")
-            return None
-
-        # 2. Formatear y preparar el payload multimodal para Gemini
-        base64_audio = base64.b64encode(file_bytes).decode('utf-8')
-        clean_mime = mime_type.split(";")[0] if mime_type else "audio/ogg"
-        
-        # Probar con Gemini 2.5 Flash / 2.0 Flash
-        for model_name in ["gemini-2.5-flash", "gemini-2.0-flash"]:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-            payload = {
-                "contents": [
-                    {
-                        "parts": [
-                            {
-                                "text": (
-                                    "Por favor, transcribe esta nota de voz a texto en español de forma precisa y directa. "
-                                    "Devuelve ÚNICAMENTE la transcripción limpia sin comentarios tuyos, saludos ni aclaraciones."
-                                )
-                            },
-                            {
-                                "inlineData": {
-                                    "mimeType": clean_mime,
-                                    "data": base64_audio
-                                }
-                            }
-                        ]
-                    }
-                ],
-                "generationConfig": {
-                    "temperature": 0.0
-                }
-            }
-            
-            # 3. Consultar la API
-            async with httpx.AsyncClient() as client:
-                res = await client.post(url, json=payload, timeout=25.0)
-                if res.status_code == 200:
-                    data = res.json()
-                    transcription = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                    logger.info(f"Transcripción exitosa con {model_name}: '{transcription[:50]}...'")
-                    return transcription
-                else:
-                    logger.warning(f"Respuesta no exitosa con {model_name} (status {res.status_code}): {res.text}")
-                    
-        return None
-                
+        from app.services.transcription import transcribe_audio_bytes
+        transcript = await transcribe_audio_bytes(file_bytes)
+        if transcript:
+            logger.info(f"✅ Transcripción en memoria exitosa: '{transcript}'")
+            return transcript
     except Exception as e:
-        logger.error(f"Excepción en la transcripción de audio: {e}")
-        return None
+        logger.error(f"Excepción en transcribe_whatsapp_audio: {e}")
+    return None
 
 
 async def process_ai_response_after_consent(contact_id: int, last_message_content: str):
@@ -372,7 +308,7 @@ async def process_whatsapp_message(ctx, payload: dict):
                 transcription = await transcribe_whatsapp_audio(file_bytes, mime_type, db)
                 
             if transcription:
-                content = f"[Media ID: {target_id}]\n[🎙️ Nota de voz recibida]: \"{transcription}\""
+                content = transcription
             else:
                 content = f"[Media ID: {target_id}]\n[🎙️ Nota de voz recibida]"
         elif msg_type in ["image", "video", "document"]:
