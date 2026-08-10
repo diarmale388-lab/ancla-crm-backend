@@ -37,6 +37,9 @@ class ContactChatResponse(BaseModel):
     qualification_level: Optional[str] = None
     qualification_notes: Optional[str] = None
     pipeline_stage_id: Optional[int] = None
+    lot_status: Optional[str] = None
+    lot_city: Optional[str] = None
+    client_type: Optional[str] = None
     last_message_content: Optional[str] = None
     last_message_time: Optional[datetime] = None
     last_message_sender: Optional[str] = None

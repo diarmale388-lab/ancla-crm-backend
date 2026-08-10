@@ -69,6 +69,9 @@ def get_contacts_with_last_message(
             "qualification_level": contact.qualification_level,
             "qualification_notes": contact.qualification_notes,
             "pipeline_stage_id": contact.pipeline_stage_id,
+            "lot_status": contact.lot_status,
+            "lot_city": contact.lot_city,
+            "client_type": contact.client_type,
             "last_message_content": last_msg.content if last_msg else None,
             "last_message_time": last_msg.created_at if last_msg else None,
             "last_message_sender": last_msg.sender_type if last_msg else None
