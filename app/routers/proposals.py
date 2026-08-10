@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
 from app.database import get_db
-from app.models.base import User, Contact, Message, SenderType, ChannelType, MessageStatus, MessageType
+from app.models.base import User, Contact, Message, SenderType, ChannelType, MessageStatus, MessageType, PipelineStage
 from app.core.deps import get_current_user
 from app.services.activity import record_activity
 from app.services.email import email_service
