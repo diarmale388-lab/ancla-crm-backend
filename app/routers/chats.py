@@ -16,26 +16,11 @@ logger = logging.getLogger("chats_router")
 
 router = APIRouter(prefix="/chats", tags=["chats"])
 
-@router.get("/debug-scoping")
-def debug_scoping_check(
+@router.get("/contacts", response_model=List[ContactChatResponse])
+def get_contacts_with_last_message(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
-):
-    role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
-    is_admin = role_str in ["admin", "userrole.admin"]
-    if not is_admin:
-        contacts = db.query(Contact).filter(Contact.assigned_user_id == current_user.id).all()
-    else:
-        contacts = db.query(Contact).all()
-    return {
-        "version": "v_scoping_323310b",
-        "user_id": current_user.id,
-        "user_email": current_user.email,
-        "user_role_raw": str(current_user.role),
-        "role_str": role_str,
-        "is_admin": is_admin,
-        "filtered_contacts_count": len(contacts)
-    }
+) -> Any:
     """
     Recupera los contactos asignados al asesor actual (o todos si es administrador),
     incluyendo el contenido y fecha de su último mensaje de forma optimizada.
