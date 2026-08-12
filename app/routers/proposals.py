@@ -197,3 +197,58 @@ async def send_proposal_email(
         "message": f"Propuesta enviada exitosamente por correo electrónico a {payload.recipient_email}",
         "email_body_preview": email_body
     }
+
+class ProposalTrackViewRequest(BaseModel):
+    contact_id: Optional[int] = None
+    reference: str = Field(..., description="Referencia de la propuesta ej. ANCLA-EXP-36")
+    duration_seconds: int = Field(0, ge=0)
+    total_cop: Optional[float] = Field(None, ge=0)
+    facade_theme: Optional[str] = None
+    client_name: Optional[str] = None
+
+@router.post("/public/track-view")
+def track_public_proposal_view(
+    payload: ProposalTrackViewRequest,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Rastrea la apertura y el tiempo de lectura/interacción del prospecto en la propuesta web (/propuesta).
+    No requiere autenticación ya que es invocado por el navegador del cliente.
+    """
+    contact = None
+    if payload.contact_id:
+        contact = db.query(Contact).filter(Contact.id == payload.contact_id).first()
+
+    if contact:
+        import datetime
+        contact.last_interaction_at = datetime.datetime.utcnow()
+
+        if payload.duration_seconds == 0:
+            # Evento Apertura Inicial
+            record_activity(
+                db=db,
+                contact_id=contact.id,
+                activity_type="PROPOSAL_VIEWED",
+                description=f"El cliente abrió la propuesta web interactiva ref: {payload.reference}.",
+                user_id=contact.assigned_user_id
+            )
+        elif payload.duration_seconds >= 30:
+            # Evento Lectura Prolongada (>30s) - Lead Caliente
+            facade_label = payload.facade_theme or "Personalizado"
+            formatted_total = f"${payload.total_cop:,.0f} COP" if payload.total_cop else "N/A"
+            record_activity(
+                db=db,
+                contact_id=contact.id,
+                activity_type="PROPOSAL_ENGAGED",
+                description=f"🔥 ALERTA CALIENTE: El cliente lleva más de {payload.duration_seconds} segundos interactuando con la propuesta web {payload.reference} (Acabado: {facade_label} | Total: {formatted_total}).",
+                user_id=contact.assigned_user_id
+            )
+
+        db.commit()
+
+    return {
+        "status": "success",
+        "tracked": True,
+        "contact_id": contact.id if contact else None,
+        "duration_seconds": payload.duration_seconds
+    }
