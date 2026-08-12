@@ -29,7 +29,8 @@ def get_contacts_with_last_message(
     from sqlalchemy import func, desc
     
     # Si el usuario es Asesor, solo ve sus prospectos asignados. Si es Admin, ve todos los prospectos.
-    if current_user.role != UserRole.ADMIN and current_user.role != "admin":
+    role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+    if role_str not in ["admin", "userrole.admin"]:
         contacts = db.query(Contact).filter(Contact.assigned_user_id == current_user.id).all()
     else:
         contacts = db.query(Contact).all()

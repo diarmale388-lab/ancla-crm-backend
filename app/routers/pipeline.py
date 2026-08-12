@@ -64,7 +64,8 @@ def get_pipeline_leads(
     appt_contacts = set(row[0] for row in db.execute(text("SELECT DISTINCT contact_id FROM appointments;")).fetchall())
 
     query = db.query(Contact)
-    if current_user.role != "admin":
+    role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+    if role_str not in ["admin", "userrole.admin"]:
         query = query.filter(Contact.assigned_user_id == current_user.id)
         
     contacts = query.all()
