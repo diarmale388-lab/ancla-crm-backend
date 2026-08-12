@@ -131,6 +131,11 @@ async def process_leadgen_submission(db: Session, lead_data: Dict[str, Any]) -> 
             habeas_data_authorized=True,
             habeas_data_authorized_at=datetime.utcnow()
         )
+        # Opción A: Asignar por defecto a la bandeja principal de Liliana León (Admin)
+        admin_user = db.query(User).filter(User.role == UserRole.ADMIN).order_by(User.id.asc()).first()
+        if admin_user:
+            contact.assigned_user_id = admin_user.id
+
         db.add(contact)
         db.commit()
         db.refresh(contact)

@@ -28,8 +28,12 @@ def get_contacts_with_last_message(
     from datetime import datetime
     from sqlalchemy import func, desc
     
-    # Todos los usuarios activos ven la lista completa de contactos
-    contacts = db.query(Contact).all()
+    # Si el usuario es Asesor, solo ve sus prospectos asignados. Si es Admin, ve todos los prospectos.
+    if current_user.role != UserRole.ADMIN and current_user.role != "admin":
+        contacts = db.query(Contact).filter(Contact.assigned_user_id == current_user.id).all()
+    else:
+        contacts = db.query(Contact).all()
+
     if not contacts:
         return []
         

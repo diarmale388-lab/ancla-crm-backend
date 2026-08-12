@@ -59,6 +59,76 @@ def read_user_me(
     """
     return current_user
 
+@router.get("/users")
+def get_all_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Any:
+    """
+    Recupera la lista de todos los usuarios registrados con su conteo de prospectos asignados.
+    """
+    from app.models.base import Contact
+    from sqlalchemy import func
+
+    users = db.query(User).order_by(User.id.asc()).all()
+    
+    # Subconsulta para contar leads asignados por usuario
+    lead_counts = db.query(
+        Contact.assigned_user_id,
+        func.count(Contact.id).label("count")
+    ).filter(Contact.assigned_user_id.isnot(None)).group_by(Contact.assigned_user_id).all()
+    count_map = {row[0]: row[1] for row in lead_counts}
+
+    results = []
+    for u in users:
+        results.append({
+            "id": u.id,
+            "email": u.email,
+            "full_name": u.full_name,
+            "role": u.role.value if hasattr(u.role, "value") else str(u.role),
+            "is_active": u.is_active,
+            "avatar_url": u.avatar_url,
+            "assigned_leads_count": count_map.get(u.id, 0),
+            "created_at": u.created_at.isoformat() if u.created_at else None
+        })
+    return results
+
+@router.put("/users/{user_id}")
+def update_user_by_admin(
+    user_id: int,
+    user_in: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_admin)
+) -> Any:
+    """
+    Actualiza datos de un usuario (Solo Administradores).
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    if "full_name" in user_in and user_in["full_name"]:
+        user.full_name = user_in["full_name"]
+    if "email" in user_in and user_in["email"]:
+        user.email = user_in["email"].lower().strip()
+    if "role" in user_in and user_in["role"]:
+        user.role = UserRole(user_in["role"])
+    if "is_active" in user_in:
+        user.is_active = bool(user_in["is_active"])
+    if "password" in user_in and user_in["password"]:
+        user.hashed_password = security.get_password_hash(user_in["password"])
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return {
+        "id": user.id,
+        "email": user.email,
+        "full_name": user.full_name,
+        "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+        "is_active": user.is_active
+    }
+
 @router.post("/register", response_model=UserResponse)
 def register_user(
     *,
