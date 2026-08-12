@@ -22,7 +22,8 @@ def login_access_token(
     """
     import traceback
     try:
-        user = db.query(User).filter(User.email == form_data.username).first()
+        login_str = form_data.username.strip()
+        user = db.query(User).filter(User.email.ilike(login_str)).first()
         if not user or not security.verify_password(form_data.password, user.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
