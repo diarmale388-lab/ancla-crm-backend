@@ -35,6 +35,13 @@ async def lifespan(app: FastAPI):
     except Exception as e_poller:
         print(f"Advertencia iniciando poller de leads: {e_poller}")
 
+    # Iniciar monitor de SLA de 15 minutos en segundo plano
+    try:
+        from app.services.sla_monitor import sla_monitor_loop
+        asyncio.create_task(sla_monitor_loop())
+    except Exception as e_sla:
+        print(f"Advertencia iniciando monitor SLA: {e_sla}")
+
     await redis_bridge.start()
     yield
     await redis_bridge.stop()

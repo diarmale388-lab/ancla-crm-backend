@@ -29,7 +29,7 @@ class ProposalGenerateRequest(BaseModel):
     freight_city: Optional[str] = Field(None, description="Ciudad o municipio de entrega")
     freight_cost: float = Field(0.0, ge=0)
     discount_pct: float = Field(0.0, ge=0, le=100)
-    payment_terms: Optional[str] = Field("60% Anticipo, 40% contra entrega", description="Condiciones de pago")
+    payment_terms: Optional[str] = Field("50% Anticipo de Fabricación, 50% Balanza Final", description="Condiciones de pago")
     custom_notes: Optional[str] = Field(None, description="Notas especiales para el cliente")
 
 class ProposalSendEmailRequest(BaseModel):
