@@ -5,7 +5,7 @@ from app.models.base import UserRole
 
 # Schema base para el Usuario
 class UserBase(BaseModel):
-    email: EmailStr
+    email: str
     full_name: str
     role: UserRole = UserRole.ASESOR
     is_active: bool = True
