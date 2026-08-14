@@ -16,6 +16,52 @@ logger = logging.getLogger("chats_router")
 
 router = APIRouter(prefix="/chats", tags=["chats"])
 
+from pydantic import BaseModel
+from typing import Optional
+
+class CreateContactSchema(BaseModel):
+    first_name: str
+    last_name: Optional[str] = ""
+    phone: str
+    email: Optional[str] = ""
+    lot_status: Optional[str] = "Buscando Lote"
+    lot_city: Optional[str] = ""
+    interest_product: Optional[str] = "Flex Home EXP-56"
+    client_type: Optional[str] = "Persona Natural"
+    assigned_user_id: Optional[int] = None
+
+@router.post("/create-contact")
+def create_new_contact_manual(
+    data: CreateContactSchema,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    clean_phone = "".join(filter(str.isdigit, data.phone))
+    if not clean_phone:
+        raise HTTPException(status_code=400, detail="Número de teléfono inválido.")
+    
+    existing = db.query(Contact).filter(Contact.phone.contains(clean_phone[-10:])).first()
+    if existing:
+        return existing
+        
+    new_contact = Contact(
+        first_name=data.first_name,
+        last_name=data.last_name or "",
+        phone=data.phone,
+        email=data.email or "",
+        lot_status=data.lot_status or "Buscando Lote",
+        lot_city=data.lot_city or "",
+        interest_product=data.interest_product or "Flex Home EXP-56",
+        client_type=data.client_type or "Persona Natural",
+        assigned_user_id=data.assigned_user_id or current_user.id,
+        source="Manual / Directo",
+        chatbot_enabled=False
+    )
+    db.add(new_contact)
+    db.commit()
+    db.refresh(new_contact)
+    return new_contact
+
 @router.get("/contacts", response_model=List[ContactChatResponse])
 def get_contacts_with_last_message(
     db: Session = Depends(get_db),
@@ -260,51 +306,7 @@ async def send_message_to_contact(
     return db_msg
 
 
-from pydantic import BaseModel
-from typing import Optional
 
-class CreateContactSchema(BaseModel):
-    first_name: str
-    last_name: Optional[str] = ""
-    phone: str
-    email: Optional[str] = ""
-    lot_status: Optional[str] = "Buscando Lote"
-    lot_city: Optional[str] = ""
-    interest_product: Optional[str] = "Flex Home EXP-56"
-    client_type: Optional[str] = "Persona Natural"
-    assigned_user_id: Optional[int] = None
-
-@router.post("/create-contact")
-def create_new_contact_manual(
-    data: CreateContactSchema,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    clean_phone = "".join(filter(str.isdigit, data.phone))
-    if not clean_phone:
-        raise HTTPException(status_code=400, detail="Número de teléfono inválido.")
-    
-    existing = db.query(Contact).filter(Contact.phone.contains(clean_phone[-10:])).first()
-    if existing:
-        return existing
-        
-    new_contact = Contact(
-        first_name=data.first_name,
-        last_name=data.last_name or "",
-        phone=data.phone,
-        email=data.email or "",
-        lot_status=data.lot_status or "Buscando Lote",
-        lot_city=data.lot_city or "",
-        interest_product=data.interest_product or "Flex Home EXP-56",
-        client_type=data.client_type or "Persona Natural",
-        assigned_user_id=data.assigned_user_id or current_user.id,
-        source="Manual / Directo",
-        chatbot_enabled=False
-    )
-    db.add(new_contact)
-    db.commit()
-    db.refresh(new_contact)
-    return new_contact
 
 
 @router.post("/{contact_id}/send-media")
