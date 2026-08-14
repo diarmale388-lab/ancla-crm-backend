@@ -23,12 +23,14 @@ def login_access_token(
     import traceback
     try:
         login_str = form_data.username.strip()
-        # 1. Coincidencia flexible por email, prefijo de correo o nombre completo
+        login_clean = login_str.replace(" ", "").lower()
+        # 1. Coincidencia flexible por email, prefijo, nombre completo o alias sin espacios
         user = db.query(User).filter(
             (User.email.ilike(login_str)) | 
             (User.email.ilike(f"{login_str}@%")) |
             (User.full_name.ilike(login_str)) |
-            (User.full_name.ilike(f"%{login_str}%"))
+            (User.full_name.ilike(f"%{login_str}%")) |
+            (User.email.ilike(f"{login_clean}%"))
         ).first()
 
         if not user or not security.verify_password(form_data.password, user.hashed_password):
