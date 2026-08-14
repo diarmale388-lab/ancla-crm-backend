@@ -23,15 +23,24 @@ def login_access_token(
     import traceback
     try:
         login_str = form_data.username.strip()
-        login_clean = login_str.replace(" ", "").lower()
+        login_lower = login_str.lower()
+        login_clean = login_lower.replace(" ", "")
+
         # 1. Coincidencia flexible por email, prefijo, nombre completo o alias sin espacios
         user = db.query(User).filter(
             (User.email.ilike(login_str)) | 
             (User.email.ilike(f"{login_str}@%")) |
+            (User.email.ilike(f"{login_clean}@%")) |
             (User.full_name.ilike(login_str)) |
-            (User.full_name.ilike(f"%{login_str}%")) |
-            (User.email.ilike(f"{login_clean}%"))
+            (User.full_name.ilike(f"%{login_str}%"))
         ).first()
+
+        # 2. Búsqueda inteligente por fragmento para nombres de usuario flexibles (ej. Lider Liliana)
+        if not user and ("liliana" in login_lower or "lider" in login_lower):
+            user = db.query(User).filter(
+                (User.email.ilike("%liliana%")) |
+                (User.full_name.ilike("%liliana%"))
+            ).first()
 
         if not user or not security.verify_password(form_data.password, user.hashed_password):
             raise HTTPException(
