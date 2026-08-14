@@ -23,11 +23,16 @@ def login_access_token(
     import traceback
     try:
         login_str = form_data.username.strip()
-        user = db.query(User).filter(User.email.ilike(login_str)).first()
+        # Buscar por email completo, prefijo antes del @, o nombre completo
+        user = db.query(User).filter(
+            (User.email.ilike(login_str)) | 
+            (User.email.ilike(f"{login_str}@%")) | 
+            (User.full_name.ilike(login_str))
+        ).first()
         if not user or not security.verify_password(form_data.password, user.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email o contraseña incorrectos",
+                detail="Usuario o contraseña incorrectos",
             )
         elif not user.is_active:
             raise HTTPException(
