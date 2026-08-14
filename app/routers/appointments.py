@@ -153,15 +153,30 @@ async def book_appointment(
 
     user_id = contact.assigned_user_id or current_user.id
 
-    # 1. Validar si el slot ya está ocupado
-    existing = db.query(Appointment).filter(
+    # 1. Validar si el contacto ya tiene cita confirmada en ese mismo día calendario (Evitar duplicados)
+    dt_val = payload.datetime if isinstance(payload.datetime, datetime) else datetime.fromisoformat(str(payload.datetime).replace('Z', ''))
+    start_of_day = dt_val.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_of_day = dt_val.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    same_day_existing = db.query(Appointment).filter(
+        Appointment.contact_id == payload.contact_id,
+        Appointment.datetime >= start_of_day,
+        Appointment.datetime <= end_of_day,
+        Appointment.status == "CONFIRMED"
+    ).first()
+
+    if same_day_existing:
+        return same_day_existing
+
+    # Validar si el slot está ocupado por otro usuario
+    slot_taken = db.query(Appointment).filter(
         Appointment.user_id == user_id,
         Appointment.datetime == payload.datetime,
         Appointment.status == "CONFIRMED"
     ).first()
-    
-    if existing:
-        raise HTTPException(status_code=400, detail="Este horario ya está reservado.")
+
+    if slot_taken:
+        raise HTTPException(status_code=400, detail="Este horario ya está reservado por otro cliente.")
 
     # 2. Registrar cita
     db_appointment = Appointment(
