@@ -23,12 +23,16 @@ def login_access_token(
     import traceback
     try:
         login_str = form_data.username.strip()
-        # Buscar por email completo, prefijo antes del @, o nombre completo
+        # 1. Intentar coincidencia directa por email o prefijo del correo (ej. diarmale388, liliana, asesor)
         user = db.query(User).filter(
             (User.email.ilike(login_str)) | 
-            (User.email.ilike(f"{login_str}@%")) | 
-            (User.full_name.ilike(login_str))
+            (User.email.ilike(f"{login_str}@%"))
         ).first()
+
+        # 2. Si no coincide por email, buscar por nombre de usuario completo
+        if not user:
+            user = db.query(User).filter(User.full_name.ilike(login_str)).first()
+
         if not user or not security.verify_password(form_data.password, user.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
