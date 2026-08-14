@@ -60,14 +60,23 @@ def login_access_token(
             detail=f"DEBUG TRACEBACK:\n{tb}"
         )
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me")
 def read_user_me(
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
-    Get current user profile.
+    Get current user profile con rol normalizado a 'admin' o 'asesor'.
     """
-    return current_user
+    role_raw = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+    clean_role = "admin" if "admin" in role_raw else "asesor"
+    return {
+        "id": current_user.id,
+        "email": current_user.email,
+        "full_name": current_user.full_name,
+        "role": clean_role,
+        "is_active": current_user.is_active,
+        "avatar_url": current_user.avatar_url
+    }
 
 @router.get("/users")
 def get_all_users(
