@@ -502,8 +502,12 @@ async def update_contact_details(
     if payload.contact_response_status is not None: contact.contact_response_status = payload.contact_response_status
     if payload.quoted_value is not None: contact.quoted_value = payload.quoted_value
     if payload.proposal_pdf_url is not None: contact.proposal_pdf_url = payload.proposal_pdf_url
-    if payload.proposal_notes is not None: contact.proposal_notes = payload.proposal_notes
-    if payload.assigned_user_id is not None: contact.assigned_user_id = payload.assigned_user_id
+    if payload.assigned_user_id is not None:
+        contact.assigned_user_id = payload.assigned_user_id
+        from app.models.base import Appointment
+        db.query(Appointment).filter(Appointment.contact_id == contact.id).update(
+            {"user_id": payload.assigned_user_id}, synchronize_session=False
+        )
 
     db.add(contact)
     db.commit()
