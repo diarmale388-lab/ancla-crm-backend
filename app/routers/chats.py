@@ -467,6 +467,7 @@ class ContactDetailsPayload(BaseModel):
     quoted_value: Optional[float] = None
     proposal_pdf_url: Optional[str] = None
     proposal_notes: Optional[str] = None
+    assigned_user_id: Optional[int] = None
 
 @router.put("/{contact_id}/details")
 @router.patch("/{contact_id}/details")
@@ -502,6 +503,7 @@ async def update_contact_details(
     if payload.quoted_value is not None: contact.quoted_value = payload.quoted_value
     if payload.proposal_pdf_url is not None: contact.proposal_pdf_url = payload.proposal_pdf_url
     if payload.proposal_notes is not None: contact.proposal_notes = payload.proposal_notes
+    if payload.assigned_user_id is not None: contact.assigned_user_id = payload.assigned_user_id
 
     db.add(contact)
     db.commit()
