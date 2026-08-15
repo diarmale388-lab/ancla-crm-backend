@@ -341,7 +341,33 @@ async def save_appointment(
             appt_datetime = dt_save.datetime.strptime(full_dt_str, "%Y-%m-%d %I:%M %p")
         except Exception:
             appt_datetime = dt_save.datetime.utcnow() + dt_save.timedelta(days=1)
-            
+
+        # 🔍 PROTECCIÓN ANTI-DUPLICADOS A LARGO PLAZO:
+        # Validar si el contacto ya tiene cita confirmada en el mismo día calendario
+        start_of_day = appt_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_day = appt_datetime.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        existing_same_day = db.query(Appointment).filter(
+            Appointment.contact_id == contact.id,
+            Appointment.datetime >= start_of_day,
+            Appointment.datetime <= end_of_day,
+            Appointment.status.in_(["CONFIRMED", "PENDING"])
+        ).first()
+
+        if existing_same_day:
+            db.close()
+            return {
+                "status": "success",
+                "success": True,
+                "already_booked": True,
+                "appointment_id": str(existing_same_day.id),
+                "datetime": existing_same_day.datetime.isoformat(),
+                "phone": phone,
+                "user_name": user_name,
+                "modality": modality,
+                "message": "La cita ya se encontraba confirmada previamente en el sistema para esta misma fecha."
+            }
+
         new_appt = Appointment(
             contact_id=contact.id,
             user_id=1,
