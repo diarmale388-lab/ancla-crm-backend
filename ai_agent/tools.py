@@ -12,18 +12,71 @@ from typing import Dict, Any, Optional
 from langchain_core.tools import tool
 
 
+import datetime as dt_tz
+
+def _get_easter_date(year: int) -> dt_tz.date:
+    """Algoritmo Perpetuo de Meeus/Gauss para calcular el Domingo de Pascua de cualquier año."""
+    a = year % 19
+    b = year // 100
+    c = year % 100
+    d = b // 4
+    e = b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i = c // 4
+    k = c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month = (h + l - 7 * m + 114) // 31
+    day = ((h + l - 7 * m + 114) % 31) + 1
+    return dt_tz.date(year, month, day)
+
+def _move_to_next_monday(date_obj: dt_tz.date) -> dt_tz.date:
+    """Ley Emiliani (Ley 51 de 1983): Si el festivo no cae en Lunes, se traslada al siguiente Lunes."""
+    weekday = date_obj.weekday() # 0 = Lunes, 6 = Domingo
+    if weekday == 0:
+        return date_obj
+    return date_obj + dt_tz.timedelta(days=(7 - weekday))
+
+def is_colombian_holiday(target_date: dt_tz.date) -> bool:
+    """Calcula dinámicamente si una fecha es Festivo Oficial en Colombia (Ley Emiliani) para cualquier año (2024-2050+)."""
+    year = target_date.year
+    holidays = set()
+
+    # 1. Festivos de fecha fija (Inmutables)
+    holidays.add(dt_tz.date(year, 1, 1))   # Año Nuevo
+    holidays.add(dt_tz.date(year, 5, 1))   # Día del Trabajo
+    holidays.add(dt_tz.date(year, 7, 20))  # Independencia de Colombia
+    holidays.add(dt_tz.date(year, 8, 7))   # Batalla de Boyacá
+    holidays.add(dt_tz.date(year, 12, 8))  # Inmaculada Concepción
+    holidays.add(dt_tz.date(year, 12, 25)) # Navidad
+
+    # 2. Festivos Ley Emiliani (Se trasladan al siguiente Lunes si no caen en Lunes)
+    holidays.add(_move_to_next_monday(dt_tz.date(year, 1, 6)))   # Reyes Magos
+    holidays.add(_move_to_next_monday(dt_tz.date(year, 3, 19)))  # San José
+    holidays.add(_move_to_next_monday(dt_tz.date(year, 6, 29)))  # San Pedro y San Pablo
+    holidays.add(_move_to_next_monday(dt_tz.date(year, 8, 15)))  # Asunción de la Virgen
+    holidays.add(_move_to_next_monday(dt_tz.date(year, 10, 12))) # Día de la Raza
+    holidays.add(_move_to_next_monday(dt_tz.date(year, 11, 1)))  # Todos los Santos
+    holidays.add(_move_to_next_monday(dt_tz.date(year, 11, 11))) # Independencia de Cartagena
+
+    # 3. Festivos móviles de Semana Santa y Pascua (Meeus/Gauss Algorithm)
+    easter = _get_easter_date(year)
+    holidays.add(easter - dt_tz.timedelta(days=3))  # Jueves Santo
+    holidays.add(easter - dt_tz.timedelta(days=2))  # Viernes Santo
+    holidays.add(_move_to_next_monday(easter + dt_tz.timedelta(days=39))) # Ascensión del Señor
+    holidays.add(_move_to_next_monday(easter + dt_tz.timedelta(days=60))) # Corpus Christi
+    holidays.add(_move_to_next_monday(easter + dt_tz.timedelta(days=68))) # Sagrado Corazón
+
+    return target_date in holidays
+
+
 @tool
 async def fetch_user_context(phone: str) -> Dict[str, Any]:
     """
     [PUENTE CRM] Obtiene la ficha técnica y el contexto histórico del cliente según su número de teléfono.
-    
-    Args:
-        phone: Número telefónico del cliente en formato E.164 (Ej: "+573001234567").
-        
-    Returns:
-        Diccionario con datos del usuario: nombre, estado del lead, citas previas y notas comerciales.
     """
-    # EL EQUIPO DEL CRM CORE IMPLEMENTARÁ LA CONSULTA SQL / ORM AQUÍ
     return {
         "status": "pending_crm_implementation",
         "phone": phone,
@@ -37,31 +90,11 @@ async def fetch_user_context(phone: str) -> Dict[str, Any]:
 async def consultar_disponibilidad(fecha_solicitada: str, modalidad: str) -> Dict[str, Any]:
     """
     Consulta la disponibilidad de franjas horarias en la agenda comercial de ANCLA Special Projects.
-    
-    LÓGICA AUTOMÁTICA EN PYTHON:
-    1. Si el cliente pide cita para 'hoy', calcula la fecha actual en la zona horaria de Colombia (ZoneInfo("America/Bogota"))
-       y suma un margen mínimo de 2 horas desde el momento actual. Franjas antes de esa hora son ignoradas.
-    2. Valida capacidad por modalidad (Virtual: máx 1 persona por slot; Presencial Showroom: máx 2 personas por slot).
-    3. Construye el payload JSON con la estructura oficial de Meta Interactive List / Buttons API para WhatsApp.
-
-    Args:
-        fecha_solicitada: Fecha deseada ('hoy', 'mañana', o en formato 'AAAA-MM-DD').
-        modalidad: Modalidad de atención ('PRESENCIAL' o 'VIRTUAL').
-        
-    Returns:
-        Diccionario estructurado con la lista de horarios libres y el objeto whatsapp_interactive_payload.
     """
     try:
-        import datetime as dt_tz
         from collections import Counter
-
-        try:
-            from zoneinfo import ZoneInfo
-            bogota_tz = ZoneInfo("America/Bogota")
-            now_bogota = dt_tz.datetime.now(bogota_tz)
-        except Exception:
-            bogota_tz = dt_tz.timezone(dt_tz.timedelta(hours=-5))
-            now_bogota = dt_tz.datetime.now(bogota_tz)
+        bogota_tz = dt_tz.timezone(dt_tz.timedelta(hours=-5))
+        now_bogota = dt_tz.datetime.now(dt_tz.timezone.utc).astimezone(bogota_tz)
 
         
         fecha_clean = fecha_solicitada.lower().strip()
@@ -169,8 +202,8 @@ async def consultar_disponibilidad(fecha_solicitada: str, modalidad: str) -> Dic
                 # 🎯 LECTURA 100% DINÁMICA DE BLOQUES CONFIGURADOS EN EL MODAL DE LA UI
                 candidate_slots = []
                 for blk in user_avail_blocks:
-                    st = blk.start_time.strip() # ej "09:00" o "09:00:00"
-                    et = blk.end_time.strip()   # ej "13:00" o "17:00:00"
+                    st = str(blk.start_time).strip() # ej "09:00:00" o "09:00"
+                    et = str(blk.end_time).strip()   # ej "17:00:00" o "17:00"
                     try:
                         st_dt = dt_tz.datetime.strptime(st[:5], "%H:%M")
                         et_dt = dt_tz.datetime.strptime(et[:5], "%H:%M")
