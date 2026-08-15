@@ -6,7 +6,7 @@ from app.core.socket_manager import manager
 from app.database import engine, get_db
 from sqlalchemy.orm import Session
 from app.models.base import Base
-from app.routers import auth, chats, webhooks, ai, meta_ads, pipeline, appointments, settings as settings_router, google_auth, analytics, broadcasts, proposals, sse, showroom
+from app.routers import auth, chats, webhooks, ai, meta_ads, pipeline, appointments, settings as settings_router, google_auth, analytics, broadcasts, proposals, sse, showroom, notifications
  
 from contextlib import asynccontextmanager
 from app.core.socket_manager import manager, RedisPubSubBridge
@@ -76,6 +76,7 @@ app.include_router(analytics.router, prefix=settings.API_V1_STR)
 app.include_router(broadcasts.router, prefix=settings.API_V1_STR)
 app.include_router(proposals.router, prefix=settings.API_V1_STR)
 app.include_router(sse.router, prefix=settings.API_V1_STR)
+app.include_router(notifications.router, prefix=settings.API_V1_STR)
 app.include_router(showroom.router)
 
 # Router dedicado para reconfirmacion de asistentes al Showroom

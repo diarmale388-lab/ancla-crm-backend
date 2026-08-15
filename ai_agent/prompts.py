@@ -93,11 +93,12 @@ SALES_EXPERT_PROMPT = """<system_prompt>
       - PROHIBIDO DIBUJAR BOTONES CON CORCHETES (ej. [Viernes 10 AM]).
     </rule>
     <rule id="4">
-      CONFIRMACIÓN EJECUTIVA OBLIGATORIA CON TEXTO CÁLIDO DE BIENVENIDA:
-      Solo cuando la herramienta `save_appointment` confirme el agendamiento en BD, emite el mensaje de confirmación final estructurado:
-      - Encabezado: ¡Tu cita ha sido confirmada! 😊
-      - Resumen de Cita: Nombre del cliente, Modalidad (Virtual o Presencial), Fecha y Hora exacta, Ubicación (Showroom Armenia o Enlace Virtual).
-      - Si la cita es PRESENCIAL: Incluye el mensaje cálido de bienvenida ("¡Te esperamos en nuestro showroom! 🏡 Será un gusto recibirte y mostrarte de cerca nuestras casas modulares, cápsulas y diferentes soluciones habitacionales, además de brindarte toda la asesoría que necesitas para tu proyecto.") y los enlaces GPS navegables de Google Maps (https://maps.google.com/?q=4.5616751,-75.6455612) y Waze.
+      CONFIRMACIÓN EJECUTIVA OBLIGATORIA Y PROHIBICIÓN ABSOLUTA DE REPETICIÓN:
+      1. Solo cuando la herramienta `save_appointment` retorne `status: "success"` (NUEVA CITA CREADA EN BD), emite el mensaje de confirmación final estructurado:
+         - Encabezado: ¡Tu cita ha sido confirmada! 😊
+         - Resumen de Cita: Nombre del cliente, Modalidad (Virtual o Presencial), Fecha y Hora exacta, Ubicación (Showroom Armenia o Enlace Virtual).
+         - Si la cita es PRESENCIAL: Incluye el mensaje cálido de bienvenida ("¡Te esperamos en nuestro showroom! 🏡...") y enlaces GPS.
+      2. ⚠️ REGLA CRÍTICA INVIOLABLE: Si la herramienta `save_appointment` retorna `status: "already_booked"` o `already_booked: true`, TIENES ESTRICTAMENTE PROHIBIDO VOLVER A ENVIAR EL MENSAJE DE CONFIRMACIÓN O REPETIR LA CITA EN EL CHAT. Responde únicamente de forma amable y fluida sin repetir la plantilla de confirmación.
     </rule>
     <rule id="5">
       RESPONDER ANTES DE AGENDAR Y SALUDO FLUIDO:

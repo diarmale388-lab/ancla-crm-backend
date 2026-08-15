@@ -78,6 +78,7 @@ class User(Base):
     messages: Mapped[List["Message"]] = relationship(back_populates="sender_user")
     availabilities: Mapped[List["Availability"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     appointments: Mapped[List["Appointment"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    push_subscriptions: Mapped[List["PushSubscription"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class PipelineStage(Base):
@@ -363,6 +364,27 @@ class AdvisorBitacoraNote(Base):
 
     # Relación
     contact: Mapped["Contact"] = relationship(back_populates="bitacora_notes")
+
+
+class PushSubscription(Base):
+    """
+    Suscripciones WebPush de navegadores (Chrome, Safari iOS 16.4+, Edge, Firefox)
+    para enviar notificaciones nativas en segundo plano cuando la pantalla está bloqueada.
+    """
+    __tablename__ = "push_subscriptions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    endpoint: Mapped[str] = mapped_column(Text, unique=True, index=True, nullable=False)
+    p256dh: Mapped[str] = mapped_column(String(255), nullable=False)
+    auth: Mapped[str] = mapped_column(String(255), nullable=False)
+    user_agent: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[dt_module.datetime] = mapped_column(DateTime, default=dt_module.datetime.utcnow, nullable=False)
+    updated_at: Mapped[dt_module.datetime] = mapped_column(DateTime, default=dt_module.datetime.utcnow, onupdate=dt_module.datetime.utcnow, nullable=False)
+
+    user: Mapped[Optional["User"]] = relationship(back_populates="push_subscriptions")
+
 
 
 

@@ -357,7 +357,7 @@ async def save_appointment(
         if existing_same_day:
             db.close()
             return {
-                "status": "success",
+                "status": "already_booked",
                 "success": True,
                 "already_booked": True,
                 "appointment_id": str(existing_same_day.id),
@@ -365,31 +365,52 @@ async def save_appointment(
                 "phone": phone,
                 "user_name": user_name,
                 "modality": modality,
-                "message": "La cita ya se encontraba confirmada previamente en el sistema para esta misma fecha."
+                "message": "⚠️ ATENCIÓN: La cita de este cliente YA estaba registrada previamente en la agenda para esta misma fecha. PROHIBIDO ENVIAR UN SEGUNDO MENSAJE DE CONFIRMACIÓN AL CLIENTE."
             }
 
-        new_appt = Appointment(
-            contact_id=contact.id,
-            user_id=1,
-            datetime=appt_datetime,
-            status="CONFIRMED",
-            appointment_type="VIRTUAL" if "VIRTUAL" in modality.upper() or "LLAMADA" in modality.upper() or "MEET" in modality.upper() else "PRESENCIAL",
-            notes=f"Cita {modality} registrada por Sofi AI para {user_name}"
-        )
-        db.add(new_appt)
-        db.commit()
-        db.refresh(new_appt)
-        
-        db.close()
-        return {
-            "status": "success",
-            "success": True,
-            "appointment_id": str(new_appt.id),
-            "datetime": appt_datetime.isoformat(),
-            "phone": phone,
-            "user_name": user_name,
-            "modality": modality
-        }
+        try:
+            new_appt = Appointment(
+                contact_id=contact.id,
+                user_id=1,
+                datetime=appt_datetime,
+                status="CONFIRMED",
+                appointment_type="VIRTUAL" if "VIRTUAL" in modality.upper() or "LLAMADA" in modality.upper() or "MEET" in modality.upper() else "PRESENCIAL",
+                notes=f"Cita {modality} registrada por Sofi AI para {user_name}"
+            )
+            db.add(new_appt)
+            db.commit()
+            db.refresh(new_appt)
+            db.close()
+            return {
+                "status": "success",
+                "success": True,
+                "appointment_id": str(new_appt.id),
+                "datetime": appt_datetime.isoformat(),
+                "phone": phone,
+                "user_name": user_name,
+                "modality": modality,
+                "message": f"Cita {modality} agendada exitosamente en BD para el {date} a las {time}."
+            }
+        except Exception as db_err:
+            db.rollback()
+            db.close()
+            # Si PostgreSQL Unique Index rebotó la inserción duplicada concurrente:
+            existing_after_err = SessionLocal().query(Appointment).filter(
+                Appointment.contact_id == contact.id,
+                Appointment.datetime >= start_of_day,
+                Appointment.datetime <= end_of_day,
+                Appointment.status.in_(["CONFIRMED", "PENDING"])
+            ).first()
+            if existing_after_err:
+                return {
+                    "status": "already_booked",
+                    "success": True,
+                    "already_booked": True,
+                    "appointment_id": str(existing_after_err.id),
+                    "datetime": existing_after_err.datetime.isoformat(),
+                    "message": "⚠️ ATENCIÓN: Inserción duplicada rebotada por PostgreSQL. La cita ya existía previamente. PROHIBIDO ENVIAR SEGUNDA CONFIRMACIÓN."
+                }
+            raise db_err
     except Exception as e:
         return {
             "status": "error",

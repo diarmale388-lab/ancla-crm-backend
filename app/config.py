@@ -34,6 +34,18 @@ class Settings(BaseSettings):
     
     # OpenRouter API Key
     OPENROUTER_API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY")
+    
+    # WebPush VAPID Keys
+    VAPID_PUBLIC_KEY: str = os.getenv(
+        "VAPID_PUBLIC_KEY",
+        "BLr7V7hzd1eU7ZZbckJfDOS6ylJ3HuEo1JDyLeFauAwYJmhAyqubMHe9y1rmEJSjGJbMjvlSFTF0241kJk0lgA0"
+    )
+    VAPID_PRIVATE_KEY: str = os.getenv(
+        "VAPID_PRIVATE_KEY",
+        "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgP3aYzcwB12kW2lxN\nlyFFDHbJHMCvqysWDOcyKTo/2ymhRANCAAS6+1e4c3dXlO2WW3JCXwzkuspSdx7h\nKNSQ8i3hWrgMGCZoQMqrmzB3vcta5hCUoxiWzI75UhUxdNuNZCZNJYAN\n-----END PRIVATE KEY-----"
+    )
+    VAPID_PRIVATE_KEY_PATH: Optional[str] = os.getenv("VAPID_PRIVATE_KEY_PATH", "vapid_private.pem")
+    VAPID_CLAIM_EMAIL: str = os.getenv("VAPID_CLAIM_EMAIL", "mailto:soporte@anclaprojects.com")
 
     class Config:
         case_sensitive = True

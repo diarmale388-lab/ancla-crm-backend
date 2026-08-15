@@ -439,6 +439,7 @@ async def process_whatsapp_message(ctx, payload: dict):
             "data": {
                 "id": db_msg.id,
                 "contact_id": contact.id,
+                "contact_name": f"{contact.first_name} {contact.last_name or ''}".strip(),
                 "sender_type": db_msg.sender_type.value if hasattr(db_msg.sender_type, "value") else str(db_msg.sender_type),
                 "channel": db_msg.channel.value if hasattr(db_msg.channel, "value") else str(db_msg.channel),
                 "message_type": db_msg.message_type.value if hasattr(db_msg.message_type, "value") else str(db_msg.message_type),
@@ -464,6 +465,14 @@ async def process_whatsapp_message(ctx, payload: dict):
             logger.error(f"Error publicando en Redis Pub/Sub: {r_err}")
             
         await manager.broadcast_to_all(ws_payload)
+
+        # 5.b Despachar WebPush nativo a través de Google FCM / Apple APNs para despertar celulares con pantalla bloqueada
+        try:
+            from app.services.push_service import send_push_for_incoming_message
+            await send_push_for_incoming_message(contact=contact, message=db_msg, db=db)
+        except Exception as push_err:
+            logger.error(f"Error despachando WebPush nativo en worker: {push_err}")
+
 
         # 6. Evaluar e interceptar revocación voluntaria (Opt-Out)
         text_lower = content.lower().strip()
