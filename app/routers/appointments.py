@@ -178,7 +178,13 @@ async def book_appointment(
     if slot_taken:
         raise HTTPException(status_code=400, detail="Este horario ya está reservado por otro cliente.")
 
-    # 2. Registrar cita
+    # 2. Reagendamiento automático: si el contacto ya tenía una cita previa activa, se libera la anterior
+    db.query(Appointment).filter(
+        Appointment.contact_id == payload.contact_id,
+        Appointment.status.in_(["CONFIRMED", "PENDING"])
+    ).delete()
+
+    # 3. Registrar nueva cita
     db_appointment = Appointment(
         contact_id=payload.contact_id,
         user_id=user_id,
