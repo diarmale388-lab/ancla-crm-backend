@@ -53,42 +53,73 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 class RedisPubSubBridge:
-    """Escucha eventos globales en Redis y los redirige a los WebSockets locales."""
+    """Escucha eventos globales en Redis (redis:// y rediss://) y los redirige a los WebSockets locales con tolerancia a fallos."""
     def __init__(self, redis_url: str):
         self.redis_url = redis_url
         self.redis_client = None
         self.pubsub = None
         self.listener_task = None
+        self.is_connected = False
 
     async def start(self):
+        if not self.redis_url or "dummy" in self.redis_url.lower():
+            logger.info("REDIS_URL no configurada o dummy. Operando en modo local WebSocket puro.")
+            return
+
         try:
-            self.redis_client = redis.from_url(self.redis_url, decode_responses=True)
+            # Soporta esquemas redis:// y rediss:// (TLS) con timeout estricto para evitar bloqueo
+            is_ssl = self.redis_url.startswith("rediss://")
+            self.redis_client = redis.from_url(
+                self.redis_url,
+                decode_responses=True,
+                socket_connect_timeout=3.0,
+                socket_timeout=3.0,
+                retry_on_timeout=True
+            )
+            # Ping de verificación rápida con timeout de 2.0s
+            await asyncio.wait_for(self.redis_client.ping(), timeout=2.0)
             self.pubsub = self.redis_client.pubsub()
             await self.pubsub.subscribe("crm_live_updates")
+            self.is_connected = True
             self.listener_task = asyncio.create_task(self._listen())
-            logger.info("Suscripción a Redis Pub/Sub activada exitosamente.")
+            logger.info("✅ Suscripción a Redis Pub/Sub (Railway / Upstash) activada exitosamente.")
         except Exception as e:
-            logger.error(f"Error iniciando puente de Redis Pub/Sub: {e}")
+            self.is_connected = False
+            logger.warning(f"⚠️ Redis Pub/Sub no disponible ({e}). Operando en modo memoria local WebSocket.")
+            # Reintentar en segundo plano tras 15 segundos sin bloquear el arranque del backend
+            asyncio.create_task(self._schedule_reconnect())
+
+    async def _schedule_reconnect(self):
+        await asyncio.sleep(15)
+        if not self.is_connected:
+            await self.start()
 
     async def _listen(self):
         try:
             async for message in self.pubsub.listen():
                 if message and message.get("type") == "message":
-                    payload = json.loads(message["data"])
-                    await self._route_payload(payload)
+                    try:
+                        payload = json.loads(message["data"])
+                        await self._route_payload(payload)
+                    except Exception as parse_err:
+                        logger.error(f"Error procesando carga útil de Redis: {parse_err}")
         except asyncio.CancelledError:
             logger.info("Hilo de escucha Redis Pub/Sub cancelado.")
         except Exception as e:
-            logger.error(f"Fallo en el hilo de escucha Pub/Sub de Redis: {e}")
-            await asyncio.sleep(5)
+            self.is_connected = False
+            logger.warning(f"⚠️ Caída en hilo de escucha Redis Pub/Sub: {e}. Programando reconexión...")
+            await asyncio.sleep(10)
             asyncio.create_task(self.start())
 
     async def _route_payload(self, payload: dict):
-        assigned_user_id = payload.get("assigned_user_id")
-        if assigned_user_id is not None:
-            await manager.send_to_user(int(assigned_user_id), payload)
-        else:
+        """
+        Difunde el evento a TODOS los clientes conectados en la instancia local
+        para que tanto administradores como asesores reciban la actualización en vivo.
+        """
+        try:
             await manager.broadcast_to_all(payload)
+        except Exception as route_err:
+            logger.error(f"Error enrutando payload de Redis a WebSockets locales: {route_err}")
 
     async def stop(self):
         if self.listener_task:
@@ -98,7 +129,14 @@ class RedisPubSubBridge:
             except asyncio.CancelledError:
                 pass
         if self.pubsub:
-            await self.pubsub.unsubscribe("crm_live_updates")
-            await self.pubsub.close()
+            try:
+                await self.pubsub.unsubscribe("crm_live_updates")
+                await self.pubsub.close()
+            except Exception:
+                pass
         if self.redis_client:
-            await self.redis_client.close()
+            try:
+                await self.redis_client.close()
+            except Exception:
+                pass
+        self.is_connected = False

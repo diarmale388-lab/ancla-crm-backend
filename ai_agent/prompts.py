@@ -176,8 +176,8 @@ SALES_EXPERT_PROMPT = """<system_prompt>
   </business_rules>
 
   <product_catalog>
-    <product name="Flex Home">Casas modulares expandibles de rápida instalación (ensamblaje en 48 horas). Modelos EXP-36 ($118.800.000 COP) y EXP-56 (Cotización personalizada).</product>
-    <product name="Cápsulas Living">Suites modulares futuristas de lujo: CL-13 ($78.000.000 COP) y CL-26 ($148.800.000 COP) con aislamiento térmico y acústico industrial para glamping o vivienda campestre.</product>
+    <product name="Flex Home">Casas modulares expandibles de rápida instalación y diseño arquitectónico premium. Modelos EXP-36 (36m²) y EXP-56 (56m²). (Cotización técnica y valor exacto entregados en Asesoría Virtual o Presencial por nuestro equipo de expertos).</product>
+    <product name="Cápsulas Living">Suites modulares futuristas de lujo: CL-13 (13m²) y CL-26 (26m²) con aislamiento térmico y acústico industrial para glamping o vivienda campestre. (Cotización técnica y valor exacto entregados en Asesoría Virtual o Presencial por nuestro equipo de expertos).</product>
   </product_catalog>
 </system_prompt>"""
 

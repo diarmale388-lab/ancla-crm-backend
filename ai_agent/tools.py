@@ -184,6 +184,10 @@ async def consultar_disponibilidad(fecha_solicitada: str, modalidad: str) -> Dic
             else: # Lunes a Viernes
                 candidate_slots = ["09:30 AM", "10:30 AM", "11:30 AM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM"] if is_presencial else ["09:30 AM", "10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM", "02:00 PM", "02:30 PM", "03:00 PM", "04:00 PM"]
                 
+            # 🛡️ FILTRO ESTRICTO SÁBADO: Descartar cualquier horario de la tarde (después de 1:00 PM) en días Sábados
+            if weekday == 5:
+                candidate_slots = [s for s in candidate_slots if not (s.endswith("PM") and not s.startswith("12:"))]
+                
             cutoff_time = (now_bogota + dt_tz.timedelta(hours=2)).time() if check_date == now_bogota.date() else None
             
             # Consultar citas existentes para check_date

@@ -454,24 +454,37 @@ async def process_whatsapp_message(ctx, payload: dict):
                 }
             }
         }
-        # Publicar evento global en Redis Pub/Sub
+        # 5.a Emisión inmediata en WebSocket local (0ms latencia para clientes conectados a esta instancia)
         try:
-            import redis.asyncio as redis_async
-            from app.config import settings
-            r_client = redis_async.from_url(settings.REDIS_URL, decode_responses=True)
-            await r_client.publish("crm_live_updates", json.dumps(ws_payload, default=str))
-            await r_client.close()
-        except Exception as r_err:
-            logger.error(f"Error publicando en Redis Pub/Sub: {r_err}")
-            
-        await manager.broadcast_to_all(ws_payload)
+            await manager.broadcast_to_all(ws_payload)
+        except Exception as ws_err:
+            logger.warning(f"Aviso en broadcast WebSocket local: {ws_err}")
 
-        # 5.b Despachar WebPush nativo a través de Google FCM / Apple APNs para despertar celulares con pantalla bloqueada
+        # 5.b Despachar WebPush nativo a celulares (FCM/APNs) ANTES de Redis para máxima confiabilidad
         try:
             from app.services.push_service import send_push_for_incoming_message
             await send_push_for_incoming_message(contact=contact, message=db_msg, db=db)
         except Exception as push_err:
             logger.error(f"Error despachando WebPush nativo en worker: {push_err}")
+
+        # 5.c Publicar evento global en Redis Pub/Sub con timeout estricto (no bloqueante ante caídas de Redis)
+        try:
+            import redis.asyncio as redis_async
+            from app.config import settings
+            if settings.REDIS_URL and "dummy" not in settings.REDIS_URL.lower():
+                r_client = redis_async.from_url(
+                    settings.REDIS_URL,
+                    decode_responses=True,
+                    socket_connect_timeout=1.5,
+                    socket_timeout=1.5
+                )
+                await asyncio.wait_for(
+                    r_client.publish("crm_live_updates", json.dumps(ws_payload, default=str)),
+                    timeout=1.5
+                )
+                await r_client.close()
+        except Exception as r_err:
+            logger.warning(f"Aviso en publicación Redis Pub/Sub (fallback local activo): {r_err}")
 
 
         # 6. Evaluar e interceptar revocación voluntaria (Opt-Out)
@@ -882,16 +895,30 @@ async def process_whatsapp_message(ctx, payload: dict):
                         }
                     }
                 }
+                # Transmisión inmediata en memoria local
+                try:
+                    await manager.broadcast_to_all(ws_payload_ai)
+                except Exception as ws_ai_err:
+                    logger.warning(f"Aviso en broadcast local de respuesta IA: {ws_ai_err}")
+
+                # Publicación en Redis Pub/Sub tolerante a fallos
                 try:
                     import redis.asyncio as redis_async
                     from app.config import settings
-                    r_client = redis_async.from_url(settings.REDIS_URL, decode_responses=True)
-                    await r_client.publish("crm_live_updates", json.dumps(ws_payload_ai, default=str))
-                    await r_client.close()
+                    if settings.REDIS_URL and "dummy" not in settings.REDIS_URL.lower():
+                        r_client = redis_async.from_url(
+                            settings.REDIS_URL,
+                            decode_responses=True,
+                            socket_connect_timeout=1.5,
+                            socket_timeout=1.5
+                        )
+                        await asyncio.wait_for(
+                            r_client.publish("crm_live_updates", json.dumps(ws_payload_ai, default=str)),
+                            timeout=1.5
+                        )
+                        await r_client.close()
                 except Exception as r_err:
-                    logger.error(f"Error publicando respuesta IA en Redis Pub/Sub: {r_err}")
-
-                await manager.broadcast_to_all(ws_payload_ai)
+                    logger.warning(f"Aviso publicando respuesta IA en Redis Pub/Sub (fallback local activo): {r_err}")
 
                 # Detección y creación automática de Citas en DB si Sofi confirmó agendamiento
                 ai_reply_lower = ai_reply.lower()
