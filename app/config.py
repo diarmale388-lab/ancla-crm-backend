@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     
     # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./crm.db")
-    REDIS_URL: str = os.getenv("REDIS_URL", "rediss://default:gQAAAAAAAqynAAIgcDJkZmI1NDdlY2JlNzA0NzAyOWI3YjJlZDQ3Njg3MGQwMA@actual-mammal-175271.upstash.io:6379")
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://default:fLedMAtmksxQSTEuQSlcldXzCvTbsNuD@redis.railway.internal:6379")
     
     # Security / JWT
     SECRET_KEY: str = os.getenv("SECRET_KEY", "super-secret-key-change-in-production-1234567890")
