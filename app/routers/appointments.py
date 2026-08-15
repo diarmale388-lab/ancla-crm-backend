@@ -301,20 +301,23 @@ def update_user_availability(
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
-    Actualiza la disponibilidad de horarios del asesor admitiendo múltiples intervalos por día.
-    Si el usuario es Administrador, aplica la disponibilidad globalmente a todos los asesores y a Sofi AI.
+    Actualiza la disponibilidad de horarios comerciales admitiendo múltiples intervalos por día.
+    REGLA DE SEGURIDAD: Solo los administradores pueden modificar los horarios de trabajo.
     """
     role_str = str(getattr(current_user.role, "value", current_user.role)).lower()
     is_admin = "admin" in role_str
 
-    # 1. Borrar disponibilidades previas
-    if is_admin:
-        db.query(Availability).delete()
-    else:
-        db.query(Availability).filter(Availability.user_id == current_user.id).delete()
+    if not is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado: Solo los administradores pueden configurar los horarios comerciales de atención."
+        )
+
+    # 1. Borrar disponibilidades previas para reconfiguración global
+    db.query(Availability).delete()
     
-    # 2. Insertar las nuevas disponibilidades
-    target_users = db.query(User).all() if is_admin else [current_user]
+    # 2. Insertar las nuevas disponibilidades globalmente para todos los asesores y Sofi AI
+    target_users = db.query(User).all()
     days_data = payload.get("days", [])
     
     for u in target_users:
@@ -457,7 +460,19 @@ def get_holiday_override(date_str: str, db: Session = Depends(get_db)):
 
 
 @router.post("/holiday-override/{date_str}")
-def save_holiday_override(date_str: str, payload: dict, db: Session = Depends(get_db)):
+def save_holiday_override(
+    date_str: str,
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    role_str = str(getattr(current_user.role, "value", current_user.role)).lower()
+    if "admin" not in role_str:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado: Solo los administradores pueden abrir horarios excepcionales o festivos."
+        )
+
     from app.models.base import SystemSetting
     slots_str = payload.get("slots", "").strip()
     sett = db.query(SystemSetting).filter(SystemSetting.key == f"holiday_override_{date_str}").first()
