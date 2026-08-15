@@ -295,33 +295,47 @@ def update_user_availability(
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
-    Actualiza la disponibilidad de horarios del asesor admitiendo múltiples intervalos por día (jornada partida).
+    Actualiza la disponibilidad de horarios del asesor admitiendo múltiples intervalos por día.
+    Si el usuario es Administrador, aplica la disponibilidad globalmente a todos los asesores y a Sofi AI.
     """
-    # 1. Borrar disponibilidades previas del usuario
-    db.query(Availability).filter(Availability.user_id == current_user.id).delete()
+    role_str = str(getattr(current_user.role, "value", current_user.role)).lower()
+    is_admin = "admin" in role_str
+
+    # 1. Borrar disponibilidades previas
+    if is_admin:
+        db.query(Availability).delete()
+    else:
+        db.query(Availability).filter(Availability.user_id == current_user.id).delete()
     
-    # 2. Insertar las nuevas disponibilidades por cada intervalo activo de cada día
+    # 2. Insertar las nuevas disponibilidades
+    target_users = db.query(User).all() if is_admin else [current_user]
     days_data = payload.get("days", [])
-    for d in days_data:
-        day_of_week = d.get("day_of_week")
-        intervals = d.get("intervals", [])
-        
-        for interval in intervals:
-            start_str = interval.get("start_time")
-            end_str = interval.get("end_time")
-            if not start_str or not end_str:
-                continue
-                
-            sh, sm = map(int, start_str.split(":"))
-            eh, em = map(int, end_str.split(":"))
+    
+    for u in target_users:
+        for d in days_data:
+            day_of_week = d.get("day_of_week")
+            intervals = d.get("intervals", [])
             
-            av = Availability(
-                user_id=current_user.id,
-                day_of_week=day_of_week,
-                start_time=time(sh, sm, 0),
-                end_time=time(eh, em, 0)
-            )
-            db.add(av)
+            for interval in intervals:
+                start_str = interval.get("start_time")
+                end_str = interval.get("end_time")
+                if not start_str or not end_str:
+                    continue
+                    
+                try:
+                    sh, sm = map(int, start_str.split(":")[:2])
+                    eh, em = map(int, end_str.split(":")[:2])
+                    
+                    av = Availability(
+                        user_id=u.id,
+                        day_of_week=day_of_week,
+                        start_time=time(sh, sm, 0),
+                        end_time=time(eh, em, 0)
+                    )
+                    db.add(av)
+                except Exception as parse_e:
+                    logger.warning(f"Error parseando intervalo {interval}: {parse_e}")
+                    pass
         
     db.commit()
     return {"status": "success", "message": "Disponibilidad de horarios actualizada exitosamente"}
