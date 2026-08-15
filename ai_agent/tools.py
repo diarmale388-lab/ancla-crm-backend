@@ -406,6 +406,12 @@ async def save_appointment(
             }
 
         try:
+            # 🔄 Si el cliente tenía una cita anterior en otra fecha (reagendamiento), liberar/eliminar la anterior
+            db.query(Appointment).filter(
+                Appointment.contact_id == contact.id,
+                Appointment.status.in_(["CONFIRMED", "PENDING"])
+            ).delete()
+
             new_appt = Appointment(
                 contact_id=contact.id,
                 user_id=1,
