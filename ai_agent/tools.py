@@ -112,24 +112,96 @@ async def consultar_disponibilidad(fecha_solicitada: str, modalidad: str) -> Dic
 
         # Si el día solicitado no tiene cupos disponibles o es Domingo, buscar automáticamente en los días siguientes
         current_check_date = target_date
+def _get_easter_date(year: int) -> dt_tz.date:
+    """Algoritmo Perpetuo de Meeus/Gauss para calcular el Domingo de Pascua de cualquier año."""
+    a = year % 19
+    b = year // 100
+    c = year % 100
+    d = b // 4
+    e = b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i = c // 4
+    k = c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month = (h + l - 7 * m + 114) // 31
+    day = ((h + l - 7 * m + 114) % 31) + 1
+    return dt_tz.date(year, month, day)
+
+def _move_to_next_monday(date_obj: dt_tz.date) -> dt_tz.date:
+    """Ley Emiliani (Ley 51 de 1983): Si el festivo no cae en Lunes, se traslada al siguiente Lunes."""
+    weekday = date_obj.weekday() # 0 = Lunes, 6 = Domingo
+    if weekday == 0:
+        return date_obj
+    return date_obj + dt_tz.timedelta(days=(7 - weekday))
+
+def is_colombian_holiday(target_date: dt_tz.date) -> bool:
+    """Calcula dinámicamente si una fecha es Festivo Oficial en Colombia (Ley Emiliani) para cualquier año (2024-2050+)."""
+    year = target_date.year
+    holidays = set()
+
+    # 1. Festivos de fecha fija (Inmutables)
+    holidays.add(dt_tz.date(year, 1, 1))   # Año Nuevo
+    holidays.add(dt_tz.date(year, 5, 1))   # Día del Trabajo
+    holidays.add(dt_tz.date(year, 7, 20))  # Independencia de Colombia
+    holidays.add(dt_tz.date(year, 8, 7))   # Batalla de Boyacá
+    holidays.add(dt_tz.date(year, 12, 8))  # Inmaculada Concepción
+    holidays.add(dt_tz.date(year, 12, 25)) # Navidad
+
+    # 2. Festivos Ley Emiliani (Se trasladan al siguiente Lunes si no caen en Lunes)
+    holidays.add(_move_to_next_monday(dt_tz.date(year, 1, 6)))   # Reyes Magos
+    holidays.add(_move_to_next_monday(dt_tz.date(year, 3, 19)))  # San José
+    holidays.add(_move_to_next_monday(dt_tz.date(year, 6, 29)))  # San Pedro y San Pablo
+    holidays.add(_move_to_next_monday(dt_tz.date(year, 8, 15)))  # Asunción de la Virgen
+    holidays.add(_move_to_next_monday(dt_tz.date(year, 10, 12))) # Día de la Raza
+    holidays.add(_move_to_next_monday(dt_tz.date(year, 11, 1)))  # Todos los Santos
+    holidays.add(_move_to_next_monday(dt_tz.date(year, 11, 11))) # Independencia de Cartagena
+
+    # 3. Festivos móviles de Semana Santa y Pascua (Meeus/Gauss Algorithm)
+    easter = _get_easter_date(year)
+    holidays.add(easter - dt_tz.timedelta(days=3))  # Jueves Santo
+    holidays.add(easter - dt_tz.timedelta(days=2))  # Viernes Santo
+    holidays.add(_move_to_next_monday(easter + dt_tz.timedelta(days=39))) # Ascensión del Señor
+    holidays.add(_move_to_next_monday(easter + dt_tz.timedelta(days=60))) # Corpus Christi
+    holidays.add(_move_to_next_monday(easter + dt_tz.timedelta(days=68))) # Sagrado Corazón
+
+    return target_date in holidays
+
+
+@tool
+async def consultar_disponibilidad(
+    fecha_solicitada: str,
+    modalidad: str
+) -> Dict[str, Any]:
+    """
+    [PUENTE CRM] Consulta las franjas horarias libres reales respetando los bloques configurados en la agenda y los festivos en Colombia.
+    """
+    try:
+        try:
+            target_date = dt_tz.datetime.strptime(fecha_solicitada, "%Y-%m-%d").date()
+        except Exception:
+            target_date = now_bogota.date()
+
+        if target_date < now_bogota.date():
+            target_date = now_bogota.date()
+
+        is_presencial = "PRESENCIAL" in modalidad.upper() or "SHOWROOM" in modalidad.upper()
+        max_capacity = 2 if is_presencial else 1
+
+        current_check_date = target_date
         valid_slots = []
         
         for day_offset in range(14):
             check_date = current_check_date + dt_tz.timedelta(days=day_offset)
-            weekday = check_date.weekday() # 0: Lunes ... 4: Viernes, 5: Sábado, 6: Domingo
-            
-            # Días Festivos Oficiales en Colombia 2026
-            COLOMBIAN_HOLIDAYS_2026 = [
-                "2026-01-01", "2026-01-12", "2026-03-23", "2026-04-02", "2026-04-03",
-                "2026-05-01", "2026-05-18", "2026-06-08", "2026-06-15", "2026-06-29",
-                "2026-07-20", "2026-08-07", "2026-08-17", "2026-10-12", "2026-11-02",
-                "2026-11-16", "2026-12-08", "2026-12-25"
-            ]
-            
+            weekday = check_date.weekday() # 0: Lunes ... 5: Sábado, 6: Domingo
             check_date_str = check_date.strftime('%Y-%m-%d')
-            is_holiday = check_date_str in COLOMBIAN_HOLIDAYS_2026
             
-            # Consultar si Liliana abrió excepcionalmente este festivo en la BD
+            # Detección Perpetua Dinámica de Festivos en Colombia (Ley Emiliani)
+            is_holiday = is_colombian_holiday(check_date)
+            
+            # Consultar si el administrador abrió excepcionalmente este día festivo en la BD
             holiday_override_slots = None
             try:
                 from app.database import SessionLocal
@@ -142,19 +214,29 @@ async def consultar_disponibilidad(fecha_solicitada: str, modalidad: str) -> Dic
             except Exception:
                 pass
 
-            # Consultar si el día y sus bloques están activos en la tabla de Availability del asesor
+            # Si es un Día Festivo en Colombia y NO tiene excepción registrada por el usuario -> DÍA CERRADO
+            if is_holiday and not holiday_override_slots:
+                continue
+
+            # Consultar si el día tiene bloques activos en la tabla Availability (Configurados en el Modal de la UI)
             user_avail_blocks = []
             try:
                 from app.database import SessionLocal
                 from app.models.base import Availability
                 db_av = SessionLocal()
-                user_avail_blocks = db_av.query(Availability).filter(Availability.day_of_week == weekday).all()
+                # Priorizar los bloques configurados por el usuario o administrador principal
+                user_avail_blocks = db_av.query(Availability).filter(
+                    Availability.day_of_week == weekday,
+                    Availability.user_id == 1
+                ).all()
+                if not user_avail_blocks:
+                    user_avail_blocks = db_av.query(Availability).filter(Availability.day_of_week == weekday).all()
                 db_av.close()
             except Exception:
                 pass
 
-            # Si no es festivo con excepción y el día no tiene bloques activos en Availability -> DÍA NO LABORABLE (Cerrado)
-            if not is_holiday and not holiday_override_slots and len(user_avail_blocks) == 0:
+            # Si no hay excepción y el día no tiene bloques habilitados en el modal -> DÍA CERRADO (No disponible)
+            if not holiday_override_slots and len(user_avail_blocks) == 0:
                 continue
 
             if weekday == 6 and not holiday_override_slots: # Domingo (Cerrado por defecto)
@@ -163,30 +245,27 @@ async def consultar_disponibilidad(fecha_solicitada: str, modalidad: str) -> Dic
             if holiday_override_slots:
                 candidate_slots = holiday_override_slots
             elif user_avail_blocks and len(user_avail_blocks) > 0:
-                # Construir franjas dentro de los bloques configurados en el modal
+                # 🎯 LECTURA 100% DINÁMICA DE BLOQUES CONFIGURADOS EN EL MODAL DE LA UI
                 candidate_slots = []
                 for blk in user_avail_blocks:
-                    st = blk.start_time # ej "09:00"
-                    et = blk.end_time   # ej "17:00"
+                    st = blk.start_time.strip() # ej "09:00" o "09:00:00"
+                    et = blk.end_time.strip()   # ej "13:00" o "17:00:00"
                     try:
-                        st_dt = dt_tz.datetime.strptime(st, "%H:%M")
-                        et_dt = dt_tz.datetime.strptime(et, "%H:%M")
+                        st_dt = dt_tz.datetime.strptime(st[:5], "%H:%M")
+                        et_dt = dt_tz.datetime.strptime(et[:5], "%H:%M")
                         curr_slot = st_dt
                         while curr_slot < et_dt:
                             candidate_slots.append(curr_slot.strftime("%I:%M %p"))
                             curr_slot += dt_tz.timedelta(minutes=60 if is_presencial else 30)
-                    except Exception:
+                    except Exception as parse_err:
+                        print("Error parseando bloque horario:", parse_err)
                         pass
                 if not candidate_slots:
-                    candidate_slots = ["09:30 AM", "10:30 AM", "11:30 AM", "02:00 PM", "03:00 PM", "04:00 PM"]
-            elif weekday == 5: # Sábado (Mañana hasta 1 PM)
+                    candidate_slots = ["09:30 AM", "10:30 AM", "11:30 AM"]
+            elif weekday == 5: # Fallback Sábado (Mañana hasta 1 PM)
                 candidate_slots = ["09:30 AM", "10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM", "12:00 PM"]
-            else: # Lunes a Viernes
+            else: # Fallback Lunes a Viernes
                 candidate_slots = ["09:30 AM", "10:30 AM", "11:30 AM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM"] if is_presencial else ["09:30 AM", "10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM", "02:00 PM", "02:30 PM", "03:00 PM", "04:00 PM"]
-                
-            # 🛡️ FILTRO ESTRICTO SÁBADO: Descartar cualquier horario de la tarde (después de 1:00 PM) en días Sábados
-            if weekday == 5:
-                candidate_slots = [s for s in candidate_slots if not (s.endswith("PM") and not s.startswith("12:"))]
                 
             cutoff_time = (now_bogota + dt_tz.timedelta(hours=2)).time() if check_date == now_bogota.date() else None
             
