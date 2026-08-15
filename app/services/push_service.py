@@ -180,10 +180,13 @@ async def send_push_for_incoming_message(
         "body": body_preview,
         "icon": "/ancla_app_icon_192.png",
         "badge": "/notification-badge.png",
+        "contact_name": sender_name,
+        "contact_id": contact.id,
         "tag": f"msg_{contact.id}",
         "data": {
             "url": f"/?tab=chats&contact_id={contact.id}",
             "contact_id": contact.id,
+            "contact_name": sender_name,
             "message_id": message.id,
             "phone": contact.phone,
             "timestamp": message.created_at.isoformat() if message.created_at else None
