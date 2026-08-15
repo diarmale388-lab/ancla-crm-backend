@@ -30,6 +30,9 @@ redis_settings = RedisSettings(
     ssl=redis_url.scheme == 'rediss'
 )
 
+# Candados asíncronos por contacto para evitar generación concurrente y dobles respuestas de Sofi AI
+contact_ai_locks: Dict[int, asyncio.Lock] = {}
+
 async def send_habeas_data_notice(to_phone: str, db: Session) -> bool:
     """
     Envía un mensaje interactivo con botones a WhatsApp solicitando el consentimiento de Habeas Data.
@@ -722,10 +725,10 @@ async def process_whatsapp_message(ctx, payload: dict):
             db.add(contact)
             db.commit()
 
-        # 10. Piloto Automático de la Inteligencia Artificial (Sofi) con Debounce de Acumulación (2.0 Segundos)
+        # 10. Piloto Automático de la Inteligencia Artificial (Sofi) con Debounce de Acumulación y Lock por Contacto
         if contact.chatbot_enabled and msg_type in ["text", "audio", "voice", "interactive", "button", "list_reply", "button_reply"]:
-            # Debounce: Esperar 2.0 segundos para agrupar respuestas ultrarrápidas
-            await asyncio.sleep(2.0)
+            # Debounce: Esperar 3.0 segundos para agrupar mensajes partidos o ráfagas rápidas de WhatsApp
+            await asyncio.sleep(3.0)
             
             # Re-verificar si el chatbot sigue activo
             db.refresh(contact)
@@ -733,7 +736,7 @@ async def process_whatsapp_message(ctx, payload: dict):
                 logger.info(f"Debounce: Chatbot fue desactivado o transferido a humano para {contact.phone}.")
                 return
 
-            # Verificar si llegó un mensaje MÁS RECIENTE del mismo contacto
+            # Verificar si llegó un mensaje MÁS RECIENTE del mismo contacto antes de tomar el lock
             newer_msg = db.query(Message).filter(
                 Message.contact_id == contact.id,
                 Message.sender_type == SenderType.CONTACT,
@@ -744,28 +747,58 @@ async def process_whatsapp_message(ctx, payload: dict):
                 logger.info(f"Debounce: Omitiendo respuesta parcial de mensaje ID {db_msg.id} porque {contact.phone} envió un mensaje posterior.")
                 return
 
-            # Concatenar mensajes recientes de los últimos 60 segundos limpiando prefijos
-            import datetime as dt_debounce
-            recent_msgs = db.query(Message).filter(
-                Message.contact_id == contact.id,
-                Message.sender_type == SenderType.CONTACT,
-                Message.created_at >= db_msg.created_at - dt_debounce.timedelta(seconds=60)
-            ).order_by(Message.created_at.asc()).all()
+            # Candado atómico por contacto: asegura que solo 1 corrutina genere y despache respuestas de IA por cliente
+            contact_lock = contact_ai_locks.setdefault(contact.id, asyncio.Lock())
+            async with contact_lock:
+                # 1. Re-verificar tras adquirir el candado si ya se emitió una respuesta de IA POSTERIOR a este mensaje
+                latest_ai_msg = db.query(Message).filter(
+                    Message.contact_id == contact.id,
+                    Message.sender_type == SenderType.AI,
+                    Message.created_at > db_msg.created_at
+                ).first()
 
-            cleaned_msgs = []
-            for m in recent_msgs:
-                c_text = m.content or ""
-                if c_text.startswith("[🎙️ Nota de voz]: "):
-                    c_text = c_text.replace("[🎙️ Nota de voz]: ", "").strip()
-                if c_text and not c_text.startswith("[Media ID:"):
-                    cleaned_msgs.append(c_text)
-            accumulated_text = " ".join(cleaned_msgs).strip() or content
+                # 2. Si la IA ya respondió justo antes, o este mensaje es una simple cortesía posterior (gracias, ok, etc.), omitir
+                clean_content = (content or "").lower().strip()
+                courtesy_words = ["gracias", "muchas gracias", "ok", "vale", "listo", "perfecto", "bueno", "grx", "ty", "👍", "🙏", "gracias!"]
+                
+                if latest_ai_msg:
+                    logger.info(f"Lock Anti-Duplicado: La IA ya emitió una respuesta posterior (Msg ID {latest_ai_msg.id}) para el contacto {contact.id}. Omitiendo respuesta redundante.")
+                    return
+                    
+                if clean_content in courtesy_words:
+                    # Verificar si la IA respondió en los últimos 30 segundos
+                    import datetime as dt_check
+                    recent_ai = db.query(Message).filter(
+                        Message.contact_id == contact.id,
+                        Message.sender_type == SenderType.AI,
+                        Message.created_at >= db_msg.created_at - dt_check.timedelta(seconds=30)
+                    ).first()
+                    if recent_ai:
+                        logger.info(f"Lock Anti-Duplicado: Omitiendo respuesta para mensaje de cortesía '{content}' porque la IA ya atendió la consulta hace segundos.")
+                        return
 
-            ai_reply = await ai_engine.generate_autopilot_reply(
-                db=db,
-                contact=contact,
-                last_message=accumulated_text
-            )
+                # Concatenar mensajes recientes de los últimos 60 segundos limpiando prefijos
+                import datetime as dt_debounce
+                recent_msgs = db.query(Message).filter(
+                    Message.contact_id == contact.id,
+                    Message.sender_type == SenderType.CONTACT,
+                    Message.created_at >= db_msg.created_at - dt_debounce.timedelta(seconds=60)
+                ).order_by(Message.created_at.asc()).all()
+
+                cleaned_msgs = []
+                for m in recent_msgs:
+                    c_text = m.content or ""
+                    if c_text.startswith("[🎙️ Nota de voz]: "):
+                        c_text = c_text.replace("[🎙️ Nota de voz]: ", "").strip()
+                    if c_text and not c_text.startswith("[Media ID:"):
+                        cleaned_msgs.append(c_text)
+                accumulated_text = " ".join(cleaned_msgs).strip() or content
+
+                ai_reply = await ai_engine.generate_autopilot_reply(
+                    db=db,
+                    contact=contact,
+                    last_message=accumulated_text
+                )
             if ai_reply:
                 try:
                     from app.services.audit_trail import log_event_audit
