@@ -564,7 +564,13 @@ async def update_contact_details(
     if payload.doc_rep_legal_url is not None: contact.doc_rep_legal_url = payload.doc_rep_legal_url
     if payload.doc_comprobante_url is not None: contact.doc_comprobante_url = payload.doc_comprobante_url
     if payload.doc_contrato_url is not None: contact.doc_contrato_url = payload.doc_contrato_url
-    if payload.assigned_user_id is not None:
+    if payload.assigned_user_id is not None and payload.assigned_user_id != contact.assigned_user_id:
+        user_role = str(current_user.role or '').upper()
+        if user_role != "ADMIN" and current_user.role != UserRole.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acceso restringido: Solo los administradores tienen permiso para reasignar prospectos a otros asesores."
+            )
         contact.assigned_user_id = payload.assigned_user_id
         from app.models.base import Appointment
         db.query(Appointment).filter(Appointment.contact_id == contact.id).update(
@@ -876,8 +882,15 @@ async def assign_contact(
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
-    Reasigna en caliente al contacto a otro vendedor/asesor del CRM.
+    Reasigna en caliente al contacto a otro vendedor/asesor del CRM (Exclusivo Administradores).
     """
+    user_role = str(current_user.role or '').upper()
+    if user_role != "ADMIN" and current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso restringido: Solo los administradores tienen permiso para reasignar prospectos a otros asesores."
+        )
+
     contact = db.query(Contact).filter(Contact.id == contact_id).first()
     if not contact:
         raise HTTPException(status_code=404, detail="Contacto no encontrado")
