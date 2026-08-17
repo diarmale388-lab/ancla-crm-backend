@@ -517,6 +517,12 @@ class ContactDetailsPayload(BaseModel):
     proposal_pdf_url: Optional[str] = None
     proposal_notes: Optional[str] = None
     assigned_user_id: Optional[int] = None
+    doc_cedula_url: Optional[str] = None
+    doc_rut_url: Optional[str] = None
+    doc_camara_comercio_url: Optional[str] = None
+    doc_rep_legal_url: Optional[str] = None
+    doc_comprobante_url: Optional[str] = None
+    doc_contrato_url: Optional[str] = None
 
 @router.put("/{contact_id}/details")
 @router.patch("/{contact_id}/details")
@@ -551,6 +557,13 @@ async def update_contact_details(
     if payload.contact_response_status is not None: contact.contact_response_status = payload.contact_response_status
     if payload.quoted_value is not None: contact.quoted_value = payload.quoted_value
     if payload.proposal_pdf_url is not None: contact.proposal_pdf_url = payload.proposal_pdf_url
+    if payload.proposal_notes is not None: contact.proposal_notes = payload.proposal_notes
+    if payload.doc_cedula_url is not None: contact.doc_cedula_url = payload.doc_cedula_url
+    if payload.doc_rut_url is not None: contact.doc_rut_url = payload.doc_rut_url
+    if payload.doc_camara_comercio_url is not None: contact.doc_camara_comercio_url = payload.doc_camara_comercio_url
+    if payload.doc_rep_legal_url is not None: contact.doc_rep_legal_url = payload.doc_rep_legal_url
+    if payload.doc_comprobante_url is not None: contact.doc_comprobante_url = payload.doc_comprobante_url
+    if payload.doc_contrato_url is not None: contact.doc_contrato_url = payload.doc_contrato_url
     if payload.assigned_user_id is not None:
         contact.assigned_user_id = payload.assigned_user_id
         from app.models.base import Appointment
@@ -585,7 +598,13 @@ async def update_contact_details(
             "contact_response_status": contact.contact_response_status,
             "quoted_value": contact.quoted_value,
             "proposal_pdf_url": contact.proposal_pdf_url,
-            "proposal_notes": contact.proposal_notes
+            "proposal_notes": contact.proposal_notes,
+            "doc_cedula_url": contact.doc_cedula_url,
+            "doc_rut_url": contact.doc_rut_url,
+            "doc_camara_comercio_url": contact.doc_camara_comercio_url,
+            "doc_rep_legal_url": contact.doc_rep_legal_url,
+            "doc_comprobante_url": contact.doc_comprobante_url,
+            "doc_contrato_url": contact.doc_contrato_url
         }
     }
     await manager.broadcast(ws_payload)
@@ -610,7 +629,13 @@ async def update_contact_details(
         "contact_response_status": contact.contact_response_status,
         "quoted_value": contact.quoted_value,
         "proposal_pdf_url": contact.proposal_pdf_url,
-        "proposal_notes": contact.proposal_notes
+        "proposal_notes": contact.proposal_notes,
+        "doc_cedula_url": contact.doc_cedula_url,
+        "doc_rut_url": contact.doc_rut_url,
+        "doc_camara_comercio_url": contact.doc_camara_comercio_url,
+        "doc_rep_legal_url": contact.doc_rep_legal_url,
+        "doc_comprobante_url": contact.doc_comprobante_url,
+        "doc_contrato_url": contact.doc_contrato_url
     }}
 
 @router.post("/{contact_id}/ai-summary")

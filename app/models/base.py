@@ -139,6 +139,14 @@ class Contact(Base):
     proposal_pdf_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     proposal_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
+    # Bóveda de Documentación Legal & Custodia (Normativa Colombia)
+    doc_cedula_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    doc_rut_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    doc_camara_comercio_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    doc_rep_legal_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    doc_comprobante_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    doc_contrato_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
     # Habeas Data (Colombia Ley 1581 de 2012)
     habeas_data_authorized: Mapped[Optional[bool]] = mapped_column(Boolean, default=None, nullable=True)
     habeas_data_authorized_at: Mapped[Optional[dt_module.datetime]] = mapped_column(DateTime, nullable=True)
