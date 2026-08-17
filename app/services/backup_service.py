@@ -11,41 +11,58 @@ from app.services.activity import record_activity
 
 logger = logging.getLogger("backup_service")
 
+import uuid
+from decimal import Decimal
+from enum import Enum
+
+def _serialize_backup_value(val):
+    if val is None:
+        return None
+    if isinstance(val, (datetime.datetime, datetime.date)):
+        return val.isoformat()
+    if isinstance(val, datetime.time):
+        return val.strftime("%H:%M:%S")
+    if isinstance(val, uuid.UUID):
+        return str(val)
+    if isinstance(val, Decimal):
+        return float(val)
+    if isinstance(val, Enum):
+        return val.value
+    if isinstance(val, bytes):
+        return val.decode("utf-8", errors="replace")
+    if isinstance(val, (list, dict, int, float, bool, str)):
+        return val
+    return str(val)
+
 def generate_database_backup_json(db: Session) -> bytes:
     """
     Serializa dinámicamente todas las tablas de la base de datos a un objeto JSON
-    y lo comprime con gzip en memoria.
+    y lo comprime con gzip en memoria de forma segura.
     """
     backup_data = {}
     inspector = inspect(db.bind)
     
     # Obtener nombres de todas las tablas existentes en la BD
     for table_name in inspector.get_table_names():
-        # Consultar todos los registros de forma genérica
-        result = db.execute(text(f"SELECT * FROM {table_name}"))
-        columns = list(result.keys())
-        
-        rows = []
-        for r in result:
-            row_dict = {}
-            for col in columns:
-                # Obtener el valor por el índice del nombre de columna
-                val = r[columns.index(col)]
-                if isinstance(val, (datetime.datetime, datetime.date)):
-                    row_dict[col] = val.isoformat()
-                elif isinstance(val, datetime.time):
-                    row_dict[col] = val.strftime("%H:%M:%S")
-                elif hasattr(val, '__dict__'):
-                    # En caso de objetos complejos no primitivos
-                    row_dict[col] = str(val)
-                else:
-                    row_dict[col] = val
-            rows.append(row_dict)
+        try:
+            result = db.execute(text(f'SELECT * FROM "{table_name}"'))
+            columns = list(result.keys())
             
-        backup_data[table_name] = rows
+            rows = []
+            for r in result:
+                row_dict = {}
+                for idx, col in enumerate(columns):
+                    val = r[idx]
+                    row_dict[col] = _serialize_backup_value(val)
+                rows.append(row_dict)
+                
+            backup_data[table_name] = rows
+        except Exception as e:
+            logger.warning(f"No se pudo respaldar la tabla {table_name}: {e}")
+            continue
         
-    # Convertir diccionario a JSON String
-    json_str = json.dumps(backup_data, ensure_ascii=False, indent=2)
+    # Convertir diccionario a JSON String con codificador por defecto
+    json_str = json.dumps(backup_data, default=str, ensure_ascii=False, indent=2)
     # Comprimir usando gzip
     compressed_data = gzip.compress(json_str.encode('utf-8'))
     return compressed_data
