@@ -27,30 +27,31 @@ def login_access_token(
         login_clean = login_lower.replace(" ", "")
 
         # 1. Coincidencia flexible por email, prefijo, nombre completo o alias sin espacios
-        user = db.query(User).filter(
+        candidate_users = db.query(User).filter(
             (User.email.ilike(login_str)) | 
             (User.email.ilike(f"{login_str}@%")) |
             (User.email.ilike(f"{login_clean}@%")) |
             (User.full_name.ilike(login_str)) |
             (User.full_name.ilike(f"%{login_str}%"))
-        ).first()
+        ).all()
 
         # 2. Búsqueda inteligente por fragmento para nombres de usuario flexibles (ej. Lider Liliana)
-        if not user and ("liliana" in login_lower or "lider" in login_lower):
-            user = db.query(User).filter(
+        if not candidate_users and ("liliana" in login_lower or "lider" in login_lower):
+            candidate_users = db.query(User).filter(
                 (User.email.ilike("%liliana%")) |
                 (User.full_name.ilike("%liliana%"))
-            ).first()
+            ).all()
 
-        if not user or not security.verify_password(form_data.password, user.hashed_password):
+        user = None
+        for u in candidate_users:
+            if u.is_active and security.verify_password(form_data.password, u.hashed_password):
+                user = u
+                break
+
+        if not user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Usuario o contraseña incorrectos",
-            )
-        elif not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Usuario inactivo",
             )
         
         access_token_expires = timedelta(minutes=security.settings.ACCESS_TOKEN_EXPIRE_MINUTES)
