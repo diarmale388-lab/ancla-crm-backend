@@ -93,14 +93,19 @@ async def run_database_backup_to_drive(db: Session) -> Optional[str]:
         
         if drive_file_id:
             logger.info(f"Copia de seguridad subida exitosamente a Google Drive. ID: {drive_file_id}")
-            # Registrar actividad del sistema
-            record_activity(
-                db=db,
-                contact_id=None,
-                activity_type="system_backup",
-                description=f"Copia de seguridad del sistema generada y subida exitosamente a Google Drive. Archivo: '{filename}' (ID: {drive_file_id}).",
-                user_id=None
-            )
+            # Registrar actividad del sistema de forma segura
+            try:
+                first_contact = db.query(Contact).first()
+                if first_contact:
+                    record_activity(
+                        db=db,
+                        contact_id=first_contact.id,
+                        activity_type="system_backup",
+                        description=f"Copia de seguridad del sistema generada y subida exitosamente a Google Drive. Archivo: '{filename}' (ID: {drive_file_id}).",
+                        user_id=None
+                    )
+            except Exception as act_err:
+                logger.warning(f"No se pudo registrar actividad de respaldo en lead_activity_logs: {act_err}")
             return drive_file_id
         else:
             logger.error("Fallo al subir el archivo de copia de seguridad a Google Drive.")
