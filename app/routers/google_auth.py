@@ -15,9 +15,10 @@ logger = logging.getLogger("google_auth_router")
 
 router = APIRouter(prefix="/google-auth", tags=["google-auth"])
 
+from urllib.parse import urlencode
+
 SCOPES = [
     "https://www.googleapis.com/auth/calendar",
-    "https://www.googleapis.com/auth/drive.file",
     "https://www.googleapis.com/auth/drive"
 ]
 
@@ -53,19 +54,19 @@ def authorize_google(
         
     production_domain = os.getenv("PRODUCTION_DOMAIN", "https://anclaspecialprojects.com")
     redirect_uri = f"{production_domain}/api/v1/google-auth/callback" if "anclaspecialprojects" in production_domain or not os.getenv("IS_LOCAL") else "http://localhost:8001/api/v1/google-auth/callback"
-    scope_str = " ".join(SCOPES)
     
-    # Construimos la URL de Google OAuth2
-    auth_url = (
-        "https://accounts.google.com/o/oauth2/v2/auth"
-        f"?client_id={client_id}"
-        f"&redirect_uri={redirect_uri}"
-        f"&response_type=code"
-        f"&scope={scope_str}"
-        f"&state={current_user.id}"
-        f"&access_type=offline"
-        f"&prompt=consent"
-    )
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": " ".join(SCOPES),
+        "state": str(current_user.id),
+        "access_type": "offline",
+        "prompt": "consent",
+        "include_granted_scopes": "true"
+    }
+    
+    auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
     
     return {"url": auth_url, "authorization_url": auth_url}
 
