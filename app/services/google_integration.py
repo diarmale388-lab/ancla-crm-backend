@@ -274,6 +274,11 @@ async def upload_whatsapp_media_to_google_drive(db: Session, file_bytes: bytes, 
     if user_id:
         creds = _get_advisor_credentials(db, user_id)
     if not creds:
+        # Buscar cualquier usuario conectado a OAuth (ej. administrador)
+        oauth_user = db.query(User).filter(User.google_refresh_token.isnot(None)).first()
+        if oauth_user:
+            creds = _get_advisor_credentials(db, oauth_user.id)
+    if not creds:
         creds = _get_google_credentials()
         
     if not creds:
