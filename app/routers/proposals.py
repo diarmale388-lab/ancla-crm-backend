@@ -252,3 +252,68 @@ def track_public_proposal_view(
         "contact_id": contact.id if contact else None,
         "duration_seconds": payload.duration_seconds
     }
+
+
+class CommercialFeedbackRequest(BaseModel):
+    author: Optional[str] = "Equipo ANCLA"
+    item_key: str = Field(..., description="ID del item o seccion")
+    item_title: str = Field(..., description="Titulo del item")
+    comment: str = Field(..., description="Contenido de la observacion")
+
+@router.post("/public/feedback")
+def submit_commercial_feedback(
+    payload: CommercialFeedbackRequest,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Guarda una observacion o comentario del cliente sobre la propuesta comercial.
+    """
+    from app.models.base import SystemSetting
+    import json
+    import datetime
+
+    setting = db.query(SystemSetting).filter(SystemSetting.key == "commercial_proposal_feedback").first()
+    existing_list = []
+    if setting and setting.value:
+        try:
+            existing_list = json.loads(setting.value)
+        except Exception:
+            existing_list = []
+
+    new_feedback = {
+        "id": int(datetime.datetime.utcnow().timestamp()),
+        "created_at": datetime.datetime.utcnow().isoformat(),
+        "author": payload.author or "Equipo ANCLA",
+        "item_key": payload.item_key,
+        "item_title": payload.item_title,
+        "comment": payload.comment
+    }
+    existing_list.append(new_feedback)
+
+    if setting:
+        setting.value = json.dumps(existing_list, ensure_ascii=False)
+    else:
+        setting = SystemSetting(key="commercial_proposal_feedback", value=json.dumps(existing_list, ensure_ascii=False))
+        db.add(setting)
+
+    db.commit()
+    return {"status": "success", "message": "Comentario guardado exitosamente", "feedback": new_feedback}
+
+@router.get("/public/feedback")
+def get_commercial_feedback(
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Obtiene todos los comentarios guardados sobre la propuesta comercial.
+    """
+    from app.models.base import SystemSetting
+    import json
+    setting = db.query(SystemSetting).filter(SystemSetting.key == "commercial_proposal_feedback").first()
+    feedback_list = []
+    if setting and setting.value:
+        try:
+            feedback_list = json.loads(setting.value)
+        except Exception:
+            feedback_list = []
+    return {"status": "success", "count": len(feedback_list), "data": feedback_list}
+
