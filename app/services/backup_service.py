@@ -8,6 +8,7 @@ from typing import Optional
 
 from app.services.google_integration import upload_whatsapp_media_to_google_drive
 from app.services.activity import record_activity
+from app.models.base import Contact
 
 logger = logging.getLogger("backup_service")
 
