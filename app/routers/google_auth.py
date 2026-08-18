@@ -52,8 +52,10 @@ def authorize_google(
             detail="Las credenciales de Google OAuth (Client ID y Client Secret) no están configuradas en los Ajustes del Sistema."
         )
         
-    production_domain = os.getenv("PRODUCTION_DOMAIN", "https://anclaspecialprojects.com")
-    redirect_uri = f"{production_domain}/api/v1/google-auth/callback" if "anclaspecialprojects" in production_domain or not os.getenv("IS_LOCAL") else "http://localhost:8001/api/v1/google-auth/callback"
+    # Usar el backend de Railway directamente para recibir el callback
+    redirect_uri = "https://ancla-crm-backend-production.up.railway.app/api/v1/google-auth/callback"
+    if os.getenv("IS_LOCAL"):
+        redirect_uri = "http://localhost:8001/api/v1/google-auth/callback"
     
     params = {
         "client_id": client_id,
@@ -82,7 +84,6 @@ async def google_callback(
     """
     production_domain = os.getenv("PRODUCTION_DOMAIN", "https://anclaspecialprojects.com")
     frontend_base = production_domain if "anclaspecialprojects" in production_domain or not os.getenv("IS_LOCAL") else "http://localhost:5174"
-    redirect_uri = f"{production_domain}/api/v1/google-auth/callback" if "anclaspecialprojects" in production_domain or not os.getenv("IS_LOCAL") else "http://localhost:8001/api/v1/google-auth/callback"
 
     user_id = int(state)
     user = db.query(User).filter(User.id == user_id).first()
@@ -93,43 +94,112 @@ async def google_callback(
     if not client_id or not client_secret:
         return RedirectResponse(url=f"{frontend_base}/settings?google_auth=error&error_msg=CredentialsNotConfigured")
         
-    # Intercambiar código por tokens
     token_url = "https://oauth2.googleapis.com/token"
-    payload = {
-        "code": code,
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "redirect_uri": redirect_uri,
-        "grant_type": "authorization_code"
-    }
     
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(token_url, data=payload)
-            if response.status_code != 200:
-                logger.error(f"Error intercambiando código de Google: {response.text}")
-                return RedirectResponse(url=f"{frontend_base}/settings?google_auth=error&error_msg=TokenExchangeFailed")
-                
-            token_data = response.json()
-            access_token = token_data.get("access_token")
-            refresh_token = token_data.get("refresh_token")
-            expires_in = token_data.get("expires_in", 3600)
+    # Intentar con el redirect_uri de Railway primero, luego con el de producción si falla
+    redirect_uris_to_try = [
+        "https://ancla-crm-backend-production.up.railway.app/api/v1/google-auth/callback",
+        f"{production_domain}/api/v1/google-auth/callback"
+    ]
+    
+    success = False
+    last_error = ""
+    
+    for r_uri in redirect_uris_to_try:
+        payload = {
+            "code": code,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "redirect_uri": r_uri,
+            "grant_type": "authorization_code"
+        }
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(token_url, data=payload)
+                if response.status_code == 200:
+                    token_data = response.json()
+                    access_token = token_data.get("access_token")
+                    refresh_token = token_data.get("refresh_token")
+                    expires_in = token_data.get("expires_in", 3600)
+                    
+                    user.google_access_token = access_token
+                    if refresh_token:
+                        user.google_refresh_token = refresh_token
+                    user.google_token_expiry = datetime.utcnow() + timedelta(seconds=expires_in)
+                    
+                    db.add(user)
+                    db.commit()
+                    success = True
+                    logger.info(f"Asesor {user.full_name} conectado exitosamente a Google OAuth2.")
+                    break
+                else:
+                    last_error = response.text
+        except Exception as e:
+            last_error = str(e)
             
-            # Actualizar datos de Google en el usuario
-            user.google_access_token = access_token
-            if refresh_token:
-                user.google_refresh_token = refresh_token
-            user.google_token_expiry = datetime.utcnow() + timedelta(seconds=expires_in)
-            
-            db.add(user)
-            db.commit()
-            
-            logger.info(f"Asesor {user.full_name} conectado exitosamente a Google OAuth2.")
-            return RedirectResponse(url=f"{frontend_base}/settings?google_auth=success")
-            
-    except Exception as e:
-        logger.error(f"Fallo en callback de Google OAuth: {e}")
-        return RedirectResponse(url=f"{frontend_base}/settings?google_auth=error&error_msg={str(e)}")
+    if success:
+        return RedirectResponse(url=f"{frontend_base}/settings?google_auth=success")
+    else:
+        logger.error(f"Error intercambiando código de Google: {last_error}")
+        return RedirectResponse(url=f"{frontend_base}/settings?google_auth=error&error_msg=TokenExchangeFailed")
+
+
+@router.get("/exchange-code")
+async def exchange_google_code(
+    code: str = Query(..., description="Authorization code from Google"),
+    state: str = Query(..., description="User ID"),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Endpoint JSON para intercambiar código de Google desde el frontend SPA.
+    """
+    production_domain = os.getenv("PRODUCTION_DOMAIN", "https://anclaspecialprojects.com")
+    user_id = int(state)
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return {"status": "error", "message": "Usuario no encontrado"}
+
+    client_id, client_secret = get_google_client_credentials(db)
+    if not client_id or not client_secret:
+        return {"status": "error", "message": "Credenciales de Google no configuradas"}
+
+    token_url = "https://oauth2.googleapis.com/token"
+    redirect_uris_to_try = [
+        f"{production_domain}/api/v1/google-auth/callback",
+        "https://ancla-crm-backend-production.up.railway.app/api/v1/google-auth/callback"
+    ]
+
+    for r_uri in redirect_uris_to_try:
+        payload = {
+            "code": code,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "redirect_uri": r_uri,
+            "grant_type": "authorization_code"
+        }
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(token_url, data=payload)
+                if response.status_code == 200:
+                    token_data = response.json()
+                    access_token = token_data.get("access_token")
+                    refresh_token = token_data.get("refresh_token")
+                    expires_in = token_data.get("expires_in", 3600)
+
+                    user.google_access_token = access_token
+                    if refresh_token:
+                        user.google_refresh_token = refresh_token
+                    user.google_token_expiry = datetime.utcnow() + timedelta(seconds=expires_in)
+
+                    db.add(user)
+                    db.commit()
+                    return {"status": "success", "message": "Conectado exitosamente con Google"}
+        except Exception as e:
+            logger.error(f"Error: {e}")
+
+    return {"status": "error", "message": "No se pudo intercambiar el código"}
+
 
 
 @router.get("/status")
