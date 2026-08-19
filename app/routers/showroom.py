@@ -5,8 +5,8 @@ from datetime import datetime
 from fastapi import APIRouter, Depends
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
-from app.database import SessionLocal
-from app.models.base import Contact, Appointment
+from app.models.base import Contact, Appointment, User
+from app.core.deps import get_current_user
 
 logger = logging.getLogger("showroom_router")
 router = APIRouter()
@@ -1082,7 +1082,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 """
 
 @router.get("/dashboard-showroom-2026", response_class=HTMLResponse)
-def get_showroom_dashboard(db: Session = Depends(get_db)):
+def get_showroom_dashboard(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     results = db.query(Appointment, Contact).join(
         Contact, Appointment.contact_id == Contact.id
     ).filter(
@@ -1163,14 +1166,17 @@ def get_showroom_dashboard(db: Session = Depends(get_db)):
             "notes": c.qualification_notes or "Sin notas adicionales."
         })
         
-    json_str = json.dumps(contacts_data, ensure_ascii=False, indent=4)
+    json_str = json.dumps(contacts_data, ensure_ascii=False, indent=4).replace("<", "\\u003c").replace(">", "\\u003e")
     filled_html = HTML_TEMPLATE.replace("{json_str}", json_str)
     
     return HTMLResponse(content=filled_html)
 
 
 @router.get("/showroom-citas-json")
-def get_showroom_citas_json(db: Session = Depends(get_db)):
+def get_showroom_citas_json(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     from app.models.base import Message, SenderType, LeadActivityLog
 
     # Obtener IDs de contactos que enviaron mensaje explicito de confirmacion en el chat

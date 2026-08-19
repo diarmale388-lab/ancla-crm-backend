@@ -1293,7 +1293,8 @@ from app.services.audit_logger import get_audit_logs
 
 @router.get("/logs/audit")
 def fetch_audit_logs(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Retorna los registros de auditoría y diagnóstico en vivo para la consola del CRM.

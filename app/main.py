@@ -1,11 +1,12 @@
 import asyncio
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.core.socket_manager import manager
 from app.database import engine, get_db
 from sqlalchemy.orm import Session
-from app.models.base import Base
+from app.models.base import Base, User
+from app.core.deps import get_current_user
 from app.routers import auth, chats, webhooks, ai, meta_ads, pipeline, appointments, settings as settings_router, google_auth, analytics, broadcasts, proposals, sse, showroom, notifications
  
 from contextlib import asynccontextmanager
@@ -53,14 +54,37 @@ app = FastAPI(
     lifespan=lifespan
 )
  
-# Configuración de CORS
+# Configuración de CORS Blindado
+ALLOWED_ORIGINS = [
+    "https://anclaspecialprojects.com",
+    "https://www.anclaspecialprojects.com",
+    "https://ancla-crm-frontend.vercel.app",
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174"
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En producción, restringir al dominio del frontend
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1|.*anclaspecialprojects\.com)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Middleware de Cabeceras de Seguridad HTTP (OWASP)
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
  
 # Registrar Routers
 app.include_router(auth.router, prefix=settings.API_V1_STR)
@@ -89,7 +113,10 @@ app.include_router(ai_agent_router)
 
 
 @app.get("/api/v1/public/audit-logs")
-def get_public_audit_logs_root(db: Session = Depends(get_db)):
+def get_public_audit_logs_root(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     from app.services.audit_logger import audit_logs
     from sqlalchemy import text
 

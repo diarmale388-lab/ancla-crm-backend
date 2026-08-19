@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.base import User, Contact, Availability, Appointment, PipelineStage
+from app.models.base import User, Contact, Availability, Appointment, PipelineStage, UserRole
 from app.schemas.appointment import AppointmentBook, AppointmentResponse, SlotResponse
 from app.core.deps import get_current_user
 from app.core.socket_manager import manager
@@ -363,8 +363,9 @@ async def delete_appointment(
     if not appointment:
         raise HTTPException(status_code=404, detail="Cita no encontrada")
 
-    # Control de acceso
-    if current_user.role != "admin" and appointment.user_id != current_user.id:
+    # Control de acceso estricto RBAC / BOLA
+    is_admin = current_user.role in [UserRole.ADMIN, "admin", "ADMIN"]
+    if not is_admin and appointment.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tienes permiso para cancelar esta cita."
@@ -411,6 +412,14 @@ async def update_appointment(
     appointment = db.query(Appointment).filter(Appointment.id == appointment_id).first()
     if not appointment:
         raise HTTPException(status_code=404, detail="Cita no encontrada")
+
+    # Control de acceso estricto RBAC / BOLA
+    is_admin = current_user.role in [UserRole.ADMIN, "admin", "ADMIN"]
+    if not is_admin and appointment.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permiso para modificar esta cita."
+        )
 
     appt_type = payload.get("appointment_type") or payload.get("modality") or payload.get("type")
     if appt_type:

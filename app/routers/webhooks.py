@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.config import settings
-from app.models.base import Contact, Message, SenderType, ChannelType, MessageType, MessageStatus
+from app.models.base import Contact, Message, SenderType, ChannelType, MessageType, MessageStatus, User
+from app.core.deps import get_current_user
 from app.core.round_robin import assign_lead_round_robin
 from app.core.socket_manager import manager
 from app.services.whatsapp import whatsapp_service
@@ -18,7 +19,10 @@ logger = logging.getLogger("webhook_router")
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 @router.get("/audit-logs")
-def get_public_audit_logs(db: Session = Depends(get_db)):
+def get_public_audit_logs(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     from app.services.audit_logger import audit_logs
     from sqlalchemy import text
 

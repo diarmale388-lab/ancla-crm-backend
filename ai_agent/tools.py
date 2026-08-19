@@ -537,7 +537,7 @@ async def generar_y_enviar_propuesta_pdf(datos_cliente: Dict[str, Any]) -> str:
             with open(template_path, "w", encoding="utf-8") as f:
                 f.write("<h1>Propuesta Comercial ANCLA Special Projects</h1><p>Cliente: {{ nombre }}</p><p>Modelo: {{ modelo_interes }}</p>")
 
-        env = Environment(loader=FileSystemLoader(templates_dir))
+        env = Environment(loader=FileSystemLoader(templates_dir), autoescape=True)
         template = env.get_template("propuesta.html.j2")
         html_renderizado = template.render(**datos_cliente)
 
