@@ -1,6 +1,7 @@
-from datetime import timedelta
-from typing import Any
-from fastapi import APIRouter, Depends, HTTPException, status
+import logging
+from datetime import datetime, timedelta
+from typing import Any, Dict, List
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -10,17 +11,50 @@ from app.schemas.user import Token, UserResponse, UserCreate
 from app.core import security
 from app.core.deps import get_current_user, get_current_active_admin
 
+logger = logging.getLogger("auth_router")
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Protección Anti-Fuerza Bruta en Memoria
+_failed_login_attempts: Dict[str, List[datetime]] = {}
+MAX_FAILED_ATTEMPTS = 5
+LOCKOUT_WINDOW_SECONDS = 60
+
+def _check_rate_limit(client_ip: str, username: str):
+    now = datetime.utcnow()
+    window_start = now - timedelta(seconds=LOCKOUT_WINDOW_SECONDS)
+    
+    # Limpiar y contar intentos de IP
+    attempts = [t for t in _failed_login_attempts.get(client_ip, []) if t > window_start]
+    _failed_login_attempts[client_ip] = attempts
+    
+    if len(attempts) >= MAX_FAILED_ATTEMPTS:
+        logger.warning(f"Intento de fuerza bruta bloqueado desde IP {client_ip} para usuario '{username}'")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Demasiados intentos fallidos de inicio de sesión. Por favor espera 1 minuto antes de reintentar."
+        )
+
+def _record_failed_attempt(client_ip: str):
+    now = datetime.utcnow()
+    if client_ip not in _failed_login_attempts:
+        _failed_login_attempts[client_ip] = []
+    _failed_login_attempts[client_ip].append(now)
+
+def _clear_failed_attempts(client_ip: str):
+    _failed_login_attempts.pop(client_ip, None)
 
 @router.post("/login", response_model=Token)
 def login_access_token(
+    request: Request,
     db: Session = Depends(get_db),
     form_data: OAuth2PasswordRequestForm = Depends()
 ) -> Any:
     """
-    OAuth2 compatible token login, get an access token for future requests.
+    OAuth2 compatible token login, con protección anti-fuerza bruta y rate limiting.
     """
-    import traceback
+    client_ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(client_ip, form_data.username)
+
     try:
         login_str = form_data.username.strip()
         login_lower = login_str.lower()
@@ -49,11 +83,15 @@ def login_access_token(
                 break
 
         if not user:
+            _record_failed_attempt(client_ip)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Usuario o contraseña incorrectos",
             )
         
+        # Login exitoso: limpiar historial de fallos
+        _clear_failed_attempts(client_ip)
+
         access_token_expires = timedelta(minutes=security.settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         return {
             "access_token": security.create_access_token(
@@ -64,10 +102,10 @@ def login_access_token(
     except HTTPException:
         raise
     except Exception as e:
-        tb = traceback.format_exc()
+        logger.exception(f"Error durante autenticación: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"DEBUG TRACEBACK:\n{tb}"
+            detail="Error interno del servidor al procesar el inicio de sesión."
         )
 
 @router.get("/me")

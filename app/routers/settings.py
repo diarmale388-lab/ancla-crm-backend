@@ -13,6 +13,7 @@ from app.database import get_db
 from app.models.base import SystemSetting, User, KnowledgeDocument
 from app.routers.auth import get_current_user
 from app.config import settings
+from app.core.crypto import encrypt_value, decrypt_value
 
 logger = logging.getLogger("settings_router")
 
@@ -903,7 +904,7 @@ def get_smtp_settings(
         "host": host.value if host else "",
         "port": port.value if port else "587",
         "username": username.value if username else "",
-        "password": password.value if password else "",
+        "password": decrypt_value(password.value) if password else "",
         "sender_email": sender_email.value if sender_email else "",
         "sender_name": sender_name.value if sender_name else "ANCLA Special Projects"
     }
@@ -918,13 +919,14 @@ def update_smtp_settings(
         val = payload.get(key)
         if val is not None:
             setting = db.query(SystemSetting).filter(SystemSetting.key == f"smtp_{key}").first()
+            stored_val = encrypt_value(str(val)) if key == "password" else str(val)
             if not setting:
-                setting = SystemSetting(key=f"smtp_{key}", value=str(val))
+                setting = SystemSetting(key=f"smtp_{key}", value=stored_val)
             else:
-                setting.value = str(val)
+                setting.value = stored_val
             db.add(setting)
     db.commit()
-    return {"status": "success", "message": "Configuración SMTP guardada exitosamente."}
+    return {"status": "success", "message": "Configuración SMTP guardada y cifrada exitosamente."}
 
 @router.post("/test-smtp")
 def test_smtp_connection(
@@ -947,7 +949,7 @@ def test_smtp_connection(
         "host": host.value if host else None,
         "port": port.value if port else None,
         "username": username.value if username else None,
-        "password": password.value if password else None,
+        "password": decrypt_value(password.value) if password else None,
         "sender_email": sender_email.value if sender_email else None,
         "sender_name": sender_name.value if sender_name else None
     }

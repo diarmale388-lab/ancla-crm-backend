@@ -49,6 +49,8 @@ def _get_google_credentials():
     return None
 
 
+from app.core.crypto import decrypt_value, encrypt_value
+
 def _get_advisor_credentials(db: Session, user_id: int) -> Credentials:
     """
     Intenta obtener las credenciales de Google OAuth2 específicas de un asesor.
@@ -69,8 +71,8 @@ def _get_advisor_credentials(db: Session, user_id: int) -> Credentials:
         return None
         
     creds = Credentials(
-        token=user.google_access_token,
-        refresh_token=user.google_refresh_token,
+        token=decrypt_value(user.google_access_token),
+        refresh_token=decrypt_value(user.google_refresh_token),
         token_uri="https://oauth2.googleapis.com/token",
         client_id=client_id,
         client_secret=client_secret,
@@ -82,8 +84,8 @@ def _get_advisor_credentials(db: Session, user_id: int) -> Credentials:
         try:
             logger.info(f"El token de Google OAuth para usuario {user_id} ha expirado. Refrescando...")
             creds.refresh(Request())
-            # Actualizar base de datos
-            user.google_access_token = creds.token
+            # Actualizar base de datos con token cifrado
+            user.google_access_token = encrypt_value(creds.token)
             user.google_token_expiry = creds.expiry
             db.add(user)
             db.commit()

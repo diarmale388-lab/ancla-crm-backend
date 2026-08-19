@@ -10,6 +10,7 @@ from app.database import get_db
 from app.models.base import User, SystemSetting
 from app.routers.auth import get_current_user
 from app.config import settings
+from app.core.crypto import encrypt_value, decrypt_value
 
 logger = logging.getLogger("google_auth_router")
 
@@ -123,9 +124,9 @@ async def google_callback(
                     refresh_token = token_data.get("refresh_token")
                     expires_in = token_data.get("expires_in", 3600)
                     
-                    user.google_access_token = access_token
+                    user.google_access_token = encrypt_value(access_token)
                     if refresh_token:
-                        user.google_refresh_token = refresh_token
+                        user.google_refresh_token = encrypt_value(refresh_token)
                     user.google_token_expiry = datetime.utcnow() + timedelta(seconds=expires_in)
                     
                     db.add(user)
@@ -138,11 +139,11 @@ async def google_callback(
         except Exception as e:
             last_error = str(e)
             
-    if success:
-        return RedirectResponse(url=f"{frontend_base}/settings?google_auth=success")
-    else:
-        logger.error(f"Error intercambiando código de Google: {last_error}")
+    if not success:
+        logger.error(f"Fallo en callback de Google OAuth: {last_error}")
         return RedirectResponse(url=f"{frontend_base}/settings?google_auth=error&error_msg=TokenExchangeFailed")
+        
+    return RedirectResponse(url=f"{frontend_base}/settings?google_auth=success")
 
 
 @router.get("/exchange-code")
@@ -187,9 +188,9 @@ async def exchange_google_code(
                     refresh_token = token_data.get("refresh_token")
                     expires_in = token_data.get("expires_in", 3600)
 
-                    user.google_access_token = access_token
+                    user.google_access_token = encrypt_value(access_token)
                     if refresh_token:
-                        user.google_refresh_token = refresh_token
+                        user.google_refresh_token = encrypt_value(refresh_token)
                     user.google_token_expiry = datetime.utcnow() + timedelta(seconds=expires_in)
 
                     db.add(user)
