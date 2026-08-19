@@ -5,18 +5,12 @@ from datetime import datetime
 from fastapi import APIRouter, Depends
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
+from app.database import get_db
 from app.models.base import Contact, Appointment, User
 from app.core.deps import get_current_user
 
 logger = logging.getLogger("showroom_router")
 router = APIRouter()
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="es">
