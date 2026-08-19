@@ -26,15 +26,9 @@ def inspect_and_seed():
             )
             db.add(admin)
             db.commit()
-            print("Usuario admin created: admin@crm.com / adminpassword")
+            print("Usuario admin creado: admin@crm.com")
         else:
-            # Asegurar que admin@crm.com tenga contraseña 'adminpassword' para desarrollo
-            admin = db.query(User).filter(User.email == "admin@crm.com").first()
-            if admin:
-                admin.hashed_password = get_password_hash("adminpassword")
-                db.add(admin)
-                db.commit()
-                print("Contraseña de admin@crm.com restablecida a 'adminpassword'")
+            print(f"Usuarios verificados ({len(users)} existentes). Preservando credenciales intactas.")
 
         stages = db.query(PipelineStage).all()
         print(f"Total etapas de Pipeline: {len(stages)}")

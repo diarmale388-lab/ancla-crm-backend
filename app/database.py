@@ -7,10 +7,9 @@ from app.config import settings
 
 logger = logging.getLogger("database")
 
-NEON_OFFICIAL_URL = "postgresql://neondb_owner:npg_u0jKzE8lWQfb@ep-misty-night-aw10uqbm.c-12.us-east-1.aws.neon.tech/neondb?sslmode=require"
 SQLITE_FALLBACK_URL = "sqlite:///./crm.db"
 
-raw_db_url = settings.DATABASE_URL or NEON_OFFICIAL_URL
+raw_db_url = os.getenv("DATABASE_URL") or settings.DATABASE_URL
 
 if raw_db_url and not raw_db_url.startswith("sqlite"):
     try:

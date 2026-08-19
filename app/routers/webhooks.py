@@ -113,6 +113,10 @@ def process_meta_ads_attribution(msg: dict, contact: Contact, text_body: str, db
 
     return tag
 
+import hmac
+import hashlib
+import json
+
 @router.get("/meta")
 @router.get("/whatsapp")
 def verify_meta_webhook(
@@ -120,8 +124,8 @@ def verify_meta_webhook(
     hub_verify_token: str = Query(None, alias="hub.verify_token"),
     hub_challenge: str = Query(None, alias="hub.challenge"),
 ):
-    valid_tokens = [settings.META_VERIFY_TOKEN, "crm_webhook_verify_token_2026", "antigravity_verify_token_123"]
-    if hub_mode == "subscribe" and (hub_verify_token in valid_tokens or not hub_verify_token):
+    valid_tokens = [t for t in [settings.META_VERIFY_TOKEN, "crm_webhook_verify_token_2026", "antigravity_verify_token_123"] if t]
+    if hub_mode == "subscribe" and hub_verify_token and hub_verify_token in valid_tokens:
         logger.info("Webhook verificado exitosamente por Meta.")
         from fastapi.responses import Response
         return Response(content=str(hub_challenge), media_type="text/plain")
@@ -163,9 +167,24 @@ async def get_arq_pool():
 async def receive_meta_webhook(request: Request, db: Session = Depends(get_db)):
     """
     Endpoint centralizado para webhooks de Meta (WhatsApp, Instagram, Facebook y Lead Ads).
+    Valida firma criptográfica HMAC-SHA256 si está presente.
     """
+    raw_body = await request.body()
+    
+    # Validación criptográfica HMAC de Meta
+    signature = request.headers.get("X-Hub-Signature-256")
+    if settings.META_APP_SECRET and signature:
+        expected_sig = "sha256=" + hmac.new(
+            settings.META_APP_SECRET.encode("utf-8"),
+            raw_body,
+            hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(signature, expected_sig):
+            logger.warning("Firma de Meta Webhook inválida (HMAC SHA-256 mismatch)")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Firma de webhook inválida")
+
     try:
-        payload = await request.json()
+        payload = json.loads(raw_body.decode('utf-8')) if raw_body else {}
     except Exception:
         payload = {}
 

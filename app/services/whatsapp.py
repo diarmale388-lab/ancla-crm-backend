@@ -7,13 +7,12 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger("whatsapp_service")
 
-VERIFIED_META_TOKEN = "EAAjwLoRIerUBSHHdpgf31uI1joi6jaALZB7XuPxOQANI1FkgIzYRoZCvIzqETZAaFbxK8aUYHrrZA6HPW3rZAdhv2ZCPviLshlJa3mxJGN7IP4lhXzHAgYjtMHDqoJhrE5fZB4lBdamYO87hu41YYFRKQNSU1rR1ZBNvHneAZBJsD4WQRS3bqJe3t69wA0ZBsepgZDZD"
-VERIFIED_PHONE_ID = "1309006675619043"
+from app.config import settings
 
 class WhatsAppService:
     def get_credentials(self, db: Optional[Any] = None):
-        access_token = VERIFIED_META_TOKEN
-        phone_id = VERIFIED_PHONE_ID
+        access_token = settings.META_ACCESS_TOKEN or os.getenv("META_ACCESS_TOKEN", "")
+        phone_id = settings.WHATSAPP_PHONE_NUMBER_ID or os.getenv("WHATSAPP_PHONE_NUMBER_ID", "1309006675619043")
 
         if db:
             try:

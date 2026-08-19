@@ -19,13 +19,13 @@ class Settings(BaseSettings):
     META_APP_ID: Optional[str] = os.getenv("META_APP_ID")
     META_APP_SECRET: Optional[str] = os.getenv("META_APP_SECRET")
     META_VERIFY_TOKEN: str = os.getenv("META_VERIFY_TOKEN", "antigravity_verify_token_123")
-    META_ACCESS_TOKEN: Optional[str] = os.getenv("META_ACCESS_TOKEN", "EAAjwLoRIerUBSE7kR9jMOjF9AdtAdZAj1UB8Wam1FRGcOdsqxVgZCJ2flDLA1DBmeHTSRiIj2vqblDx5KAUEpKQzZBQdmAEAqfKxkIro7NRuoswtgnmXeFkVZApzZBMVFmcHGaqI1oJAEkY8oDxMVfWNzFQmQiUfz5YuAg1XrNLdD7ll4mLZCTxVw9ZBtd2ip0Vu2Wysmu0ZBG9eUsfgYxCZBZBXrnXopDI6WrPGZAaM0b5tTxsheZBZCQjUzdZBIAPHTpd3L3F4qi7X9ep9VvNGFozHzNdwZDZD")
+    META_ACCESS_TOKEN: Optional[str] = os.getenv("META_ACCESS_TOKEN")
     WHATSAPP_PHONE_NUMBER_ID: Optional[str] = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "1309006675619043")
     WHATSAPP_BUSINESS_ACCOUNT_ID: Optional[str] = os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID")
     
     # AI Engine
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
-    GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6JwTVDiq80T2UerXL_hBTFXJdvCJ1TQ_aoqpuQoloEdvw")
+    GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY")
     
     # SMS Integration (Ejemplo: Twilio)
     TWILIO_ACCOUNT_SID: Optional[str] = os.getenv("TWILIO_ACCOUNT_SID")
