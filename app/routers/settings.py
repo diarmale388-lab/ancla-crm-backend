@@ -464,22 +464,37 @@ def get_quick_replies(
     """
     setting = db.query(SystemSetting).filter(SystemSetting.key == "quick_replies").first()
     if not setting:
-        # Valores por defecto para ANCLA Special Projects
+        # Valores por defecto para ANCLA Special Projects con soporte dinámico de género y variables
         default_replies = [
             {
                 "id": 1,
-                "title": "Ficha FLEX HOME 56m²",
-                "content": "La Casa Expandible FLEX HOME (56 m²) incluye estructura de acero galvanizado anticorrosivo, muros sándwich con aislamiento termoacústico, 2 habitaciones, baño completo de vidrio templado y cocina integrada. ¡Lista para habitar!"
+                "title": "📹 Invitación Google Meet (Directa)",
+                "content": "Hola {{cliente}}, con mucho gusto te comparto el link de acceso a la videollamada para nuestra asesoría programada:\n\n🔗 {{link_meet}}\n\nSolo dale clic para conectarte. ¡Quedo muy {{atento_atenta}} a tu conexión!\n\n{{asesor}}\nANCLA Special Projects"
             },
             {
                 "id": 2,
-                "title": "Ficha Capsula Linvig 13m²",
-                "content": "La Capsula Linvig de 13 m² es una cabina modular de alta gama con balcón/deck de 1.20m, 1 habitación suite, baño completo y cocineta eléctrica. Ideal para proyectos de glamping o turismo de lujo."
+                "title": "📹 Invitación Google Meet (Formal)",
+                "content": "Buenos días, {{cliente}}. Le habla {{asesor}} de ANCLA Special Projects.\n\nCon mucho gusto le comparto el link de acceso a la videollamada para nuestra asesoría programada:\n\n🔗 {{link_meet}}\n\nSolo dele clic para ingresar. Quedo muy {{atento_atenta}} a su conexión. ¡Será un gusto atenderle!\n\n{{asesor}}\nANCLA Special Projects"
             },
             {
                 "id": 3,
-                "title": "Coordinar Cita",
-                "content": "Con gusto coordinamos una llamada comercial de 15 minutos para enviarte los planos detallados y resolver tus dudas técnicas. ¿Qué día te queda mejor?"
+                "title": "⚡ Recordatorio Rápido (Enlace Meet)",
+                "content": "¡Hola {{cliente}}! Ya estamos listos para nuestra asesoría virtual.\n\nAquí tienes el enlace directo para ingresar a la sala:\n🔗 {{link_meet}}\n\n¡Te espero en la sala!"
+            },
+            {
+                "id": 4,
+                "title": "🏠 Flex Home 36m² ($118.8M)",
+                "content": "El modelo Flex Home EXP-36 (36m² | 5.90m x 6.30m) tiene un valor oficial de $118.800.000 COP. Cuenta con estructura de acero galvanizado Q350, 2 habitaciones, 1 baño completo, cocina y aislamiento termoacústico de 75mm."
+            },
+            {
+                "id": 5,
+                "title": "🏡 Flex Home 56m² (Personalizada)",
+                "content": "La Casa Expandible FLEX HOME (56 m² | 11.80m x 6.30m) cuenta con 3 habitaciones, 2 baños, sala-comedor y sistema de doble expansión hidráulica (Cotización personalizada en showroom)."
+            },
+            {
+                "id": 6,
+                "title": "📍 Ubicación Showroom Armenia",
+                "content": "Nuestra sala de ventas y showroom de exhibición está ubicada en Armenia, Quindío, sobre la Avenida Centenario, frente a Pan y Miel.\n• Waze: https://waze.com/ul?q=Avenida+Centenario+Armenia+Quindio\n• Google Maps: https://maps.google.com/?q=4.5616751,-75.6455612"
             }
         ]
         return default_replies
