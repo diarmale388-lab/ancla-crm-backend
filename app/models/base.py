@@ -238,6 +238,7 @@ class Availability(Base):
     day_of_week: Mapped[int] = mapped_column(Integer, nullable=False) # 0 = Lunes, 6 = Domingo
     start_time: Mapped[dt_module.time] = mapped_column(Time, nullable=False) # Hora de entrada (ej. 09:00:00)
     end_time: Mapped[dt_module.time] = mapped_column(Time, nullable=False) # Hora de salida (ej. 17:00:00)
+    modality: Mapped[str] = mapped_column(String(50), default="VIRTUAL", nullable=False) # PRESENCIAL, VIRTUAL
 
     # Relaciones
     user: Mapped["User"] = relationship(back_populates="availabilities")

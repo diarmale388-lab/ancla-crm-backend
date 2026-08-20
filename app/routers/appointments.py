@@ -14,24 +14,30 @@ logger = logging.getLogger("appointments_router")
 
 router = APIRouter(prefix="/appointments", tags=["appointments"])
 
-def ensure_default_availability(db: Session, user_id: int):
+def ensure_default_availability(db: Session, user_id: int, modality: str = "VIRTUAL"):
     """
-    Si el asesor no tiene horario de disponibilidad definido,
-    crea un horario estándar por defecto de Lunes a Viernes de 9am a 5pm.
+    Si el asesor no tiene horario de disponibilidad definido para la modalidad,
+    crea un horario estándar por defecto.
     """
-    availabilities = db.query(Availability).filter(Availability.user_id == user_id).all()
+    availabilities = db.query(Availability).filter(
+        Availability.user_id == user_id,
+        Availability.modality == modality
+    ).all()
     if not availabilities:
-        # Lunes a Sábado (0 a 5)
-        for day in range(6):
-            av = Availability(
-                user_id=user_id,
-                day_of_week=day,
-                start_time=time(9, 0, 0),
-                end_time=time(17, 0, 0)
-            )
-            db.add(av)
+        if modality == "PRESENCIAL":
+            # 🏢 Showroom Armenia: L-V (09:30-12:30 y 14:00-17:00), Sábados (09:30-13:00)
+            for day in range(5):
+                db.add(Availability(user_id=user_id, day_of_week=day, start_time=time(9, 30, 0), end_time=time(12, 30, 0), modality="PRESENCIAL"))
+                db.add(Availability(user_id=user_id, day_of_week=day, start_time=time(14, 0, 0), end_time=time(17, 0, 0), modality="PRESENCIAL"))
+            db.add(Availability(user_id=user_id, day_of_week=5, start_time=time(9, 30, 0), end_time=time(13, 0, 0), modality="PRESENCIAL"))
+        else:
+            # 💻 Virtual / Llamada: L-V (10:00-12:00 y 14:00-17:00), Sábados (10:00-12:00)
+            for day in range(5):
+                db.add(Availability(user_id=user_id, day_of_week=day, start_time=time(10, 0, 0), end_time=time(12, 0, 0), modality="VIRTUAL"))
+                db.add(Availability(user_id=user_id, day_of_week=day, start_time=time(14, 0, 0), end_time=time(17, 0, 0), modality="VIRTUAL"))
+            db.add(Availability(user_id=user_id, day_of_week=5, start_time=time(10, 0, 0), end_time=time(12, 0, 0), modality="VIRTUAL"))
         db.commit()
-        availabilities = db.query(Availability).filter(Availability.user_id == user_id).all()
+        availabilities = db.query(Availability).filter(Availability.user_id == user_id, Availability.modality == modality).all()
     return availabilities
 
 
@@ -267,31 +273,58 @@ def get_user_availability(
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
-    Obtiene el horario de disponibilidad del asesor logueado agrupado por días y sus intervalos de tiempo.
+    Obtiene el horario de disponibilidad separado por modalidades (PRESENCIAL vs VIRTUAL/LLAMADA)
+    con duración de slot y tiempo de descanso entre citas.
     """
-    availabilities = db.query(Availability).filter(Availability.user_id == current_user.id).order_by(Availability.day_of_week, Availability.start_time).all()
-    if not availabilities:
-        availabilities = ensure_default_availability(db, current_user.id)
+    from app.models.base import SystemSetting
+    
+    # Asegurar disponibilidades por defecto si no existen
+    ensure_default_availability(db, current_user.id, "PRESENCIAL")
+    ensure_default_availability(db, current_user.id, "VIRTUAL")
+    
+    def get_modality_data(mod: str):
+        avs = db.query(Availability).filter(
+            Availability.user_id == current_user.id,
+            Availability.modality == mod
+        ).order_by(Availability.day_of_week, Availability.start_time).all()
         
-    # Agrupar por día de la semana
-    by_day = {}
-    for av in availabilities:
-        day = av.day_of_week
-        if day not in by_day:
-            by_day[day] = []
-        by_day[day].append({
-            "start_time": av.start_time.strftime("%H:%M"),
-            "end_time": av.end_time.strftime("%H:%M")
-        })
+        by_day = {}
+        for av in avs:
+            day = av.day_of_week
+            if day not in by_day:
+                by_day[day] = []
+            by_day[day].append({
+                "start_time": av.start_time.strftime("%H:%M"),
+                "end_time": av.end_time.strftime("%H:%M")
+            })
         
-    # Formatear respuesta de 0 (Lunes) a 6 (Domingo)
-    result = []
-    for day in range(7):
-        result.append({
-            "day_of_week": day,
-            "intervals": by_day.get(day, [])
-        })
-    return result
+        days_result = []
+        for day in range(7):
+            days_result.append({
+                "day_of_week": day,
+                "intervals": by_day.get(day, [])
+            })
+        
+        dur_sett = db.query(SystemSetting).filter(SystemSetting.key == f"slot_duration_{mod.lower()}").first()
+        buf_sett = db.query(SystemSetting).filter(SystemSetting.key == f"buffer_time_{mod.lower()}").first()
+        
+        default_dur = 60 if mod == "PRESENCIAL" else 30
+        default_buf = 15 if mod == "PRESENCIAL" else 10
+        
+        return {
+            "days": days_result,
+            "slot_duration": int(dur_sett.value) if dur_sett and dur_sett.value and dur_sett.value.isdigit() else default_dur,
+            "buffer_time": int(buf_sett.value) if buf_sett and buf_sett.value and buf_sett.value.isdigit() else default_buf
+        }
+
+    presencial_data = get_modality_data("PRESENCIAL")
+    virtual_data = get_modality_data("VIRTUAL")
+
+    return {
+        "presencial": presencial_data,
+        "virtual": virtual_data,
+        "days": virtual_data["days"]  # Compatibilidad con clientes antiguos
+    }
 
 
 @router.post("/availability")
@@ -301,8 +334,8 @@ def update_user_availability(
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
-    Actualiza la disponibilidad de horarios comerciales admitiendo múltiples intervalos por día.
-    REGLA DE SEGURIDAD: Solo los administradores pueden modificar los horarios de trabajo.
+    Actualiza la disponibilidad de horarios separada por modalidades (PRESENCIAL vs VIRTUAL),
+    con soporte para hora de almuerzo, múltiples bloques, duración de cita y tiempo de descanso.
     """
     role_str = str(getattr(current_user.role, "value", current_user.role)).lower()
     is_admin = "admin" in role_str
@@ -313,41 +346,65 @@ def update_user_availability(
             detail="Acceso denegado: Solo los administradores pueden configurar los horarios comerciales de atención."
         )
 
-    # 1. Borrar disponibilidades previas para reconfiguración global
-    db.query(Availability).delete()
-    
-    # 2. Insertar las nuevas disponibilidades globalmente para todos los asesores y Sofi AI
+    from app.models.base import SystemSetting
     target_users = db.query(User).all()
-    days_data = payload.get("days", [])
-    
-    for u in target_users:
-        for d in days_data:
-            day_of_week = d.get("day_of_week")
-            intervals = d.get("intervals", [])
-            
-            for interval in intervals:
-                start_str = interval.get("start_time")
-                end_str = interval.get("end_time")
-                if not start_str or not end_str:
-                    continue
-                    
-                try:
-                    sh, sm = map(int, start_str.split(":")[:2])
-                    eh, em = map(int, end_str.split(":")[:2])
-                    
-                    av = Availability(
-                        user_id=u.id,
-                        day_of_week=day_of_week,
-                        start_time=time(sh, sm, 0),
-                        end_time=time(eh, em, 0)
-                    )
-                    db.add(av)
-                except Exception as parse_e:
-                    logger.warning(f"Error parseando intervalo {interval}: {parse_e}")
-                    pass
+
+    def save_modality_schedule(mod_key: str, mod_data: dict):
+        db.query(Availability).filter(Availability.modality == mod_key).delete()
         
+        days_list = mod_data.get("days", [])
+        for u in target_users:
+            for d in days_list:
+                day_of_week = d.get("day_of_week")
+                intervals = d.get("intervals", [])
+                for interval in intervals:
+                    start_str = interval.get("start_time")
+                    end_str = interval.get("end_time")
+                    if not start_str or not end_str:
+                        continue
+                    try:
+                        sh, sm = map(int, str(start_str).split(":")[:2])
+                        eh, em = map(int, str(end_str).split(":")[:2])
+                        av = Availability(
+                            user_id=u.id,
+                            day_of_week=day_of_week,
+                            start_time=time(sh, sm, 0),
+                            end_time=time(eh, em, 0),
+                            modality=mod_key
+                        )
+                        db.add(av)
+                    except Exception as parse_e:
+                        logger.warning(f"Error parseando intervalo {interval}: {parse_e}")
+                        pass
+        
+        # Guardar duración de cita y tiempo de descanso (buffer)
+        if "slot_duration" in mod_data and str(mod_data["slot_duration"]).isdigit():
+            sd_sett = db.query(SystemSetting).filter(SystemSetting.key == f"slot_duration_{mod_key.lower()}").first()
+            if not sd_sett:
+                db.add(SystemSetting(key=f"slot_duration_{mod_key.lower()}", value=str(mod_data["slot_duration"])))
+            else:
+                sd_sett.value = str(mod_data["slot_duration"])
+                db.add(sd_sett)
+
+        if "buffer_time" in mod_data and str(mod_data["buffer_time"]).isdigit():
+            bt_sett = db.query(SystemSetting).filter(SystemSetting.key == f"buffer_time_{mod_key.lower()}").first()
+            if not bt_sett:
+                db.add(SystemSetting(key=f"buffer_time_{mod_key.lower()}", value=str(mod_data["buffer_time"])))
+            else:
+                bt_sett.value = str(mod_data["buffer_time"])
+                db.add(bt_sett)
+
+    if isinstance(payload, dict) and ("presencial" in payload or "virtual" in payload):
+        if "presencial" in payload:
+            save_modality_schedule("PRESENCIAL", payload["presencial"])
+        if "virtual" in payload:
+            save_modality_schedule("VIRTUAL", payload["virtual"])
+    else:
+        # Formato plano legado
+        save_modality_schedule("VIRTUAL", payload if isinstance(payload, dict) else {"days": payload})
+
     db.commit()
-    return {"status": "success", "message": "Disponibilidad de horarios actualizada exitosamente"}
+    return {"status": "success", "message": "Disponibilidad de horarios actualizada exitosamente para ambas modalidades"}
 
 
 @router.delete("/{appointment_id}")

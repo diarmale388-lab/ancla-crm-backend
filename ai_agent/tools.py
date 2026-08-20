@@ -172,21 +172,50 @@ async def consultar_disponibilidad(fecha_solicitada: str, modalidad: str) -> Dic
             if is_holiday and not holiday_override_slots:
                 continue
 
-            # Consultar si el día tiene bloques activos en la tabla Availability (Configurados en el Modal de la UI)
+            # Consultar si el día tiene bloques activos en la tabla Availability filtrados por la MODALIDAD (PRESENCIAL vs VIRTUAL)
             user_avail_blocks = []
+            target_modality = "PRESENCIAL" if is_presencial else "VIRTUAL"
+            slot_duration_min = 60 if is_presencial else 30
+            buffer_time_min = 15 if is_presencial else 10
+
             try:
                 from app.database import SessionLocal
-                from app.models.base import Availability
+                from app.models.base import Availability, SystemSetting
                 db_av = SessionLocal()
-                # Priorizar los bloques configurados por el usuario o administrador principal
+                
+                # Leer parámetros de duración y descanso configurados en el CRM
+                sd_sett = db_av.query(SystemSetting).filter(SystemSetting.key == f"slot_duration_{target_modality.lower()}").first()
+                if sd_sett and sd_sett.value and sd_sett.value.isdigit():
+                    slot_duration_min = int(sd_sett.value)
+                bf_sett = db_av.query(SystemSetting).filter(SystemSetting.key == f"buffer_time_{target_modality.lower()}").first()
+                if bf_sett and bf_sett.value and bf_sett.value.isdigit():
+                    buffer_time_min = int(bf_sett.value)
+
+                # Consultar bloques específicos de la modalidad (priorizar admin/user 1)
                 user_avail_blocks = db_av.query(Availability).filter(
                     Availability.day_of_week == weekday,
+                    Availability.modality == target_modality,
                     Availability.user_id == 1
-                ).all()
+                ).order_by(Availability.start_time).all()
+
                 if not user_avail_blocks:
-                    user_avail_blocks = db_av.query(Availability).filter(Availability.day_of_week == weekday).all()
+                    # Fallback si no está para user_id 1
+                    all_blocks = db_av.query(Availability).filter(
+                        Availability.day_of_week == weekday,
+                        Availability.modality == target_modality
+                    ).order_by(Availability.start_time).all()
+                    
+                    seen_times = set()
+                    user_avail_blocks = []
+                    for b in all_blocks:
+                        pair = (str(b.start_time)[:5], str(b.end_time)[:5])
+                        if pair not in seen_times:
+                            seen_times.add(pair)
+                            user_avail_blocks.append(b)
+
                 db_av.close()
-            except Exception:
+            except Exception as e_av:
+                print("Error consultando availability en BD:", e_av)
                 pass
 
             # Si no hay excepción y el día no tiene bloques habilitados en el modal -> DÍA CERRADO (No disponible)
@@ -199,27 +228,32 @@ async def consultar_disponibilidad(fecha_solicitada: str, modalidad: str) -> Dic
             if holiday_override_slots:
                 candidate_slots = holiday_override_slots
             elif user_avail_blocks and len(user_avail_blocks) > 0:
-                # 🎯 LECTURA 100% DINÁMICA DE BLOQUES CONFIGURADOS EN EL MODAL DE LA UI
+                # 🎯 LECTURA 100% DINÁMICA DE BLOQUES CONFIGURADOS EN EL MODAL DE LA UI (Excluye almuerzos automáticamente)
                 candidate_slots = []
+                step_minutes = max(15, slot_duration_min + buffer_time_min)
+                seen_slots = set()
                 for blk in user_avail_blocks:
-                    st = str(blk.start_time).strip() # ej "09:00:00" o "09:00"
-                    et = str(blk.end_time).strip()   # ej "17:00:00" o "17:00"
+                    st = str(blk.start_time).strip() # ej "09:30:00" o "09:30"
+                    et = str(blk.end_time).strip()   # ej "12:30:00" o "12:30"
                     try:
                         st_dt = dt_tz.datetime.strptime(st[:5], "%H:%M")
                         et_dt = dt_tz.datetime.strptime(et[:5], "%H:%M")
                         curr_slot = st_dt
-                        while curr_slot < et_dt:
-                            candidate_slots.append(curr_slot.strftime("%I:%M %p"))
-                            curr_slot += dt_tz.timedelta(minutes=60 if is_presencial else 30)
+                        while curr_slot + dt_tz.timedelta(minutes=slot_duration_min) <= et_dt:
+                            slot_str = curr_slot.strftime("%I:%M %p")
+                            if slot_str not in seen_slots:
+                                seen_slots.add(slot_str)
+                                candidate_slots.append(slot_str)
+                            curr_slot += dt_tz.timedelta(minutes=step_minutes)
                     except Exception as parse_err:
                         print("Error parseando bloque horario:", parse_err)
                         pass
                 if not candidate_slots:
-                    candidate_slots = ["09:30 AM", "10:30 AM", "11:30 AM"]
-            elif weekday == 5: # Fallback Sábado (Mañana hasta 1 PM)
-                candidate_slots = ["09:30 AM", "10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM", "12:00 PM"]
+                    candidate_slots = ["09:30 AM", "10:30 AM", "11:30 AM"] if is_presencial else ["10:00 AM", "11:30 AM", "02:30 PM"]
+            elif weekday == 5: # Fallback Sábado
+                candidate_slots = ["09:30 AM", "10:30 AM", "11:30 AM", "12:30 PM"] if is_presencial else ["10:00 AM", "11:00 AM", "12:00 PM"]
             else: # Fallback Lunes a Viernes
-                candidate_slots = ["09:30 AM", "10:30 AM", "11:30 AM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM"] if is_presencial else ["09:30 AM", "10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM", "02:00 PM", "02:30 PM", "03:00 PM", "04:00 PM"]
+                candidate_slots = ["09:30 AM", "10:30 AM", "11:30 AM", "02:30 PM", "03:30 PM", "04:30 PM"] if is_presencial else ["10:00 AM", "11:00 AM", "02:00 PM", "03:00 PM", "04:00 PM"]
                 
             cutoff_time = (now_bogota + dt_tz.timedelta(hours=2)).time() if check_date == now_bogota.date() else None
             
