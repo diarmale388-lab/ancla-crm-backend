@@ -327,6 +327,32 @@ def get_user_availability(
     }
 
 
+def parse_time_str(time_val: Any) -> Optional[time]:
+    if not time_val:
+        return None
+    if isinstance(time_val, time):
+        return time_val
+    t_str = str(time_val).strip().lower()
+    
+    is_pm = "p. m." in t_str or "pm" in t_str or "p.m." in t_str
+    is_am = "a. m." in t_str or "am" in t_str or "a.m." in t_str
+    
+    clean = "".join([c for c in t_str if c.isdigit() or c == ":"]).strip()
+    if not clean:
+        return None
+    parts = clean.split(":")
+    try:
+        h = int(parts[0])
+        m = int(parts[1]) if len(parts) > 1 else 0
+        if is_pm and h < 12:
+            h += 12
+        elif is_am and h == 12:
+            h = 0
+        return time(min(max(0, h), 23), min(max(0, m), 59), 0)
+    except Exception:
+        return None
+
+
 @router.post("/availability")
 def update_user_availability(
     payload: Any,
@@ -335,7 +361,7 @@ def update_user_availability(
 ) -> Any:
     """
     Actualiza la disponibilidad de horarios separada por modalidades (PRESENCIAL vs VIRTUAL),
-    con soporte para hora de almuerzo, múltiples bloques, duración de cita y tiempo de descanso.
+    con soporte para hora de almuerzo, múltiples bloques y duración de cita.
     """
     role_str = str(getattr(current_user.role, "value", current_user.role)).lower()
     is_admin = "admin" in role_str
@@ -362,20 +388,17 @@ def update_user_availability(
                     end_str = interval.get("end_time")
                     if not start_str or not end_str:
                         continue
-                    try:
-                        sh, sm = map(int, str(start_str).split(":")[:2])
-                        eh, em = map(int, str(end_str).split(":")[:2])
+                    st = parse_time_str(start_str)
+                    et = parse_time_str(end_str)
+                    if st and et:
                         av = Availability(
                             user_id=u.id,
                             day_of_week=day_of_week,
-                            start_time=time(sh, sm, 0),
-                            end_time=time(eh, em, 0),
+                            start_time=st,
+                            end_time=et,
                             modality=mod_key
                         )
                         db.add(av)
-                    except Exception as parse_e:
-                        logger.warning(f"Error parseando intervalo {interval}: {parse_e}")
-                        pass
         
         # Guardar duración de cita y tiempo de descanso (buffer)
         if "slot_duration" in mod_data and str(mod_data["slot_duration"]).isdigit():
