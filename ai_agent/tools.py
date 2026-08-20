@@ -414,6 +414,11 @@ async def save_appointment(
             db.add(contact)
             db.commit()
             
+        target_modality = "VIRTUAL" if "VIRTUAL" in modality.upper() or "LLAMADA" in modality.upper() or "MEET" in modality.upper() else "PRESENCIAL"
+        contact.scheduling_state = target_modality
+        db.add(contact)
+        db.commit()
+
         # Generar datetime objeto
         try:
             full_dt_str = f"{date} {time}"
@@ -421,7 +426,7 @@ async def save_appointment(
         except Exception:
             appt_datetime = dt_save.datetime.utcnow() + dt_save.timedelta(days=1)
 
-        # 🔍 PROTECCIÓN ANTI-DUPLICADOS A LARGO PLAZO:
+        # 🔍 PROTECCIÓN ANTI-DUPLICADOS Y SOPORTE DE CAMBIO DE MODALIDAD:
         # Validar si el contacto ya tiene cita confirmada en el mismo día calendario
         start_of_day = appt_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
         end_of_day = appt_datetime.replace(hour=23, minute=59, second=59, microsecond=999999)
@@ -434,21 +439,42 @@ async def save_appointment(
         ).first()
 
         if existing_same_day:
-            db.close()
-            return {
-                "status": "already_booked",
-                "success": True,
-                "already_booked": True,
-                "appointment_id": str(existing_same_day.id),
-                "datetime": existing_same_day.datetime.isoformat(),
-                "phone": phone,
-                "user_name": user_name,
-                "modality": modality,
-                "message": "⚠️ ATENCIÓN: La cita de este cliente YA estaba registrada previamente en la agenda para esta misma fecha. PROHIBIDO ENVIAR UN SEGUNDO MENSAJE DE CONFIRMACIÓN AL CLIENTE."
-            }
+            # Si el cliente está cambiando de modalidad (ej: Presencial -> Virtual) o de hora en el mismo día:
+            if existing_same_day.appointment_type != target_modality or existing_same_day.datetime != appt_datetime:
+                existing_same_day.appointment_type = target_modality
+                existing_same_day.datetime = appt_datetime
+                existing_same_day.notes = f"Cita actualizada a {target_modality} por Sofi AI para {user_name}"
+                db.add(existing_same_day)
+                db.commit()
+                saved_id = str(existing_same_day.id)
+                db.close()
+                return {
+                    "status": "success",
+                    "success": True,
+                    "appointment_id": saved_id,
+                    "datetime": appt_datetime.isoformat(),
+                    "phone": phone,
+                    "user_name": user_name,
+                    "modality": target_modality,
+                    "message": f"Cita actualizada exitosamente a modalidad {target_modality} para el {date} a las {time}."
+                }
+            else:
+                saved_id = str(existing_same_day.id)
+                db.close()
+                return {
+                    "status": "already_booked",
+                    "success": True,
+                    "already_booked": True,
+                    "appointment_id": saved_id,
+                    "datetime": appt_datetime.isoformat(),
+                    "phone": phone,
+                    "user_name": user_name,
+                    "modality": modality,
+                    "message": "⚠️ ATENCIÓN: La cita de este cliente YA estaba registrada previamente en la agenda para esta misma fecha y modalidad. PROHIBIDO ENVIAR UN SEGUNDO MENSAJE DE CONFIRMACIÓN AL CLIENTE."
+                }
 
         try:
-            # 🔄 Si el cliente tenía una cita anterior en otra fecha (reagendamiento), liberar/eliminar la anterior
+            # 🔄 Si el cliente tenía una cita anterior en otra fecha (reagendamiento / cambio de fecha), liberar la anterior
             db.query(Appointment).filter(
                 Appointment.contact_id == contact.id,
                 Appointment.status.in_(["CONFIRMED", "PENDING"])
@@ -459,8 +485,8 @@ async def save_appointment(
                 user_id=1,
                 datetime=appt_datetime,
                 status="CONFIRMED",
-                appointment_type="VIRTUAL" if "VIRTUAL" in modality.upper() or "LLAMADA" in modality.upper() or "MEET" in modality.upper() else "PRESENCIAL",
-                notes=f"Cita {modality} registrada por Sofi AI para {user_name}"
+                appointment_type=target_modality,
+                notes=f"Cita {target_modality} registrada por Sofi AI para {user_name}"
             )
             db.add(new_appt)
             db.commit()
@@ -473,8 +499,8 @@ async def save_appointment(
                 "datetime": appt_datetime.isoformat(),
                 "phone": phone,
                 "user_name": user_name,
-                "modality": modality,
-                "message": f"Cita {modality} agendada exitosamente en BD para el {date} a las {time}."
+                "modality": target_modality,
+                "message": f"Cita {target_modality} agendada exitosamente en BD para el {date} a las {time}."
             }
         except Exception as db_err:
             db.rollback()
