@@ -152,9 +152,9 @@ class AIEngine:
             all_state_msgs = final_state.get("messages", [])
             new_msgs = all_state_msgs[initial_msg_count:] if len(all_state_msgs) > initial_msg_count else all_state_msgs[-1:]
 
-            # Recopilar los fragmentos de texto generados por la IA exclusivamente en este turno
-            ai_turn_texts = []
-            for msg in new_msgs:
+            # Tomar el mensaje definitivo final generado por la IA tras invocar las herramientas
+            final_ai_msg = None
+            for msg in reversed(new_msgs):
                 if getattr(msg, "type", "") == "ai" or isinstance(msg, AIMessage):
                     content_val = getattr(msg, "content", "")
                     if isinstance(content_val, list):
@@ -162,19 +162,23 @@ class AIEngine:
                         content_str = "".join(text_parts).strip()
                     else:
                         content_str = str(content_val or "").strip()
-
+                    
                     if content_str and content_str.lower() != "none":
-                        # Limpiar frases internas de transición de herramientas
-                        lines = [
-                            l for l in content_str.split("\n")
-                            if not (l.lower().startswith("voy a consultar") or l.lower().startswith("permíteme consultar") or l.lower().startswith("voy a revisar"))
-                        ]
-                        cleaned_chunk = "\n".join(lines).strip()
-                        if cleaned_chunk and cleaned_chunk not in ai_turn_texts:
-                            ai_turn_texts.append(cleaned_chunk)
+                        final_ai_msg = content_str
+                        break
 
-            if ai_turn_texts:
-                full_reply = "\n\n".join(ai_turn_texts).strip()
+            if final_ai_msg:
+                # Limpiar cualquier residuo de pensamientos internos de herramientas
+                clean_lines = [
+                    l for l in final_ai_msg.split("\n")
+                    if not (l.strip().lower().startswith("voy a consultar") or 
+                            l.strip().lower().startswith("permíteme consultar") or 
+                            l.strip().lower().startswith("voy a revisar") or
+                            l.strip().lower().startswith("voy a proceder") or
+                            l.strip().lower().startswith("un momento, por favor") or
+                            l.strip().lower().startswith("un momento por favor"))
+                ]
+                full_reply = "\n".join(clean_lines).strip()
                 try:
                     safe_log = full_reply[:140].encode('ascii', errors='replace').decode('ascii')
                     print(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente: '{safe_log}...'")
