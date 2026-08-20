@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timedelta, time
 from typing import List, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -355,7 +355,7 @@ def parse_time_str(time_val: Any) -> Optional[time]:
 
 @router.post("/availability")
 def update_user_availability(
-    payload: Any,
+    payload: Any = Body(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Any:
