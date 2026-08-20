@@ -39,9 +39,19 @@ else:
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+def init_db():
+    try:
+        from app.models.base import Base
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        logger.warning(f"Advertencia creando tablas en BD: {e}")
+
+init_db()
+
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+

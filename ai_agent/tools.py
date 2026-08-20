@@ -671,7 +671,10 @@ async def solicitar_autorizacion_cita_nocturna(
             contact = db.query(Contact).filter(Contact.first_name.ilike(f"%{user_name.split()[0]}%")).first()
 
         if contact:
-            # 1. Crear Nota Interna Privada en el Chat
+            # 1. Actualizar estado del contacto y crear Nota Interna Privada en el Chat
+            contact.scheduling_state = "SPECIAL_REQUEST_PENDING"
+            db.add(contact)
+
             note_content = (
                 f"🚨 [SOLICITUD CITA NOCTURNA / ESPECIAL]:\n"
                 f"El cliente {contact.first_name or user_name} ({contact.phone}) solicita asesoría virtual en horario especial: '{horario_propuesto}'.\n"
