@@ -9,6 +9,29 @@ logger = logging.getLogger("whatsapp_service")
 
 from app.config import settings
 
+def normalize_whatsapp_text(text: str) -> str:
+    if not text:
+        return ""
+    t = text.replace('\xa0', ' ').replace('\u202f', ' ').replace('\r\n', '\n').replace('\r', '\n')
+    
+    # Si el texto viene aplanado en una sola línea o con muy pocos saltos de línea
+    if '\n' not in t or t.count('\n') <= 1:
+        # Puntos seguidos de 2 o más espacios -> punto + doble salto de línea
+        t = re.sub(r'([.!?])\s{2,}', r'\1\n\n', t)
+        
+        # Patrones de Google Meet / Citas estructuradas
+        t = re.sub(r'\s*(Link de la reunión:?)\s*', r'\n\n*Link de la reunión:*\n', t, flags=re.IGNORECASE)
+        t = re.sub(r'\s*(Información para unirse a la reunión[^\n]*)\s*', r'\n\n\1\n', t, flags=re.IGNORECASE)
+        t = re.sub(r'\s*(Vínculo a la videollamada:?)\s*', r'\n*Vínculo a la videollamada:* ', t, flags=re.IGNORECASE)
+        t = re.sub(r'\s*(O marca:?)\s*', r'\n*O marca:* ', t, flags=re.IGNORECASE)
+        t = re.sub(r'\s*(Más números de teléfono:?)\s*', r'\n*Más números de teléfono:* ', t, flags=re.IGNORECASE)
+        t = re.sub(r'\s*(Quedo atent[ao]\s+a\s+su\s+conexi[oó]n[^\n.]*\.?)\s*', r'\n\n\1\n\n', t, flags=re.IGNORECASE)
+        t = re.sub(r'\s*(Liliana León[^\n]*)\s*', r'\n\n\1\n', t, flags=re.IGNORECASE)
+        t = re.sub(r'\s*(ANCLA Special Projects)\s*$', r'\n\1', t, flags=re.IGNORECASE)
+        t = re.sub(r'\n{3,}', '\n\n', t).strip()
+        
+    return t
+
 class WhatsAppService:
     def get_credentials(self, db: Optional[Any] = None):
         access_token = settings.META_ACCESS_TOKEN or os.getenv("META_ACCESS_TOKEN", "")
@@ -37,22 +60,25 @@ class WhatsAppService:
             logger.error("WhatsAppService no está configurado (falta token o ID de número).")
             return None
 
+        # Normalizar párrafos y saltos de línea para que llegue ordenado y legible
+        clean_text = normalize_whatsapp_text(message_text)
+
         url = f"https://graph.facebook.com/v18.0/{phone_id}/messages"
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json"
         }
-        safe_log_text = message_text.encode('ascii', errors='backslashreplace').decode('ascii')
+        safe_log_text = clean_text.encode('ascii', errors='backslashreplace').decode('ascii')
         print(f"[WHATSAPP_SEND] Texto exacto despachado:\n\"{safe_log_text}\"\n")
         logger.info(f"[WHATSAPP_SEND] send_text_message to {to_phone}: '{safe_log_text[:100]}...'")
 
-        has_url = bool(re.search(r'https?://', message_text))
+        has_url = bool(re.search(r'https?://', clean_text))
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
             "to": to_phone,
             "type": "text",
-            "text": {"preview_url": has_url, "body": message_text}
+            "text": {"preview_url": has_url, "body": clean_text}
         }
 
         max_retries = 3
