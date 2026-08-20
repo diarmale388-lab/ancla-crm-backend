@@ -11,6 +11,9 @@ from app.schemas.user import Token, UserResponse, UserCreate
 from app.core import security
 from app.core.deps import get_current_user, get_current_active_admin
 
+from app.core.rate_limiter import get_client_ip, rate_limit
+from app.core.security import trigger_global_panic_revocation
+
 logger = logging.getLogger("auth_router")
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -31,7 +34,8 @@ def _check_rate_limit(client_ip: str, username: str):
         logger.warning(f"Intento de fuerza bruta bloqueado desde IP {client_ip} para usuario '{username}'")
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Demasiados intentos fallidos de inicio de sesión. Por favor espera 1 minuto antes de reintentar."
+            detail="Demasiados intentos fallidos de inicio de sesión. Por favor espera 1 minuto antes de reintentar.",
+            headers={"Retry-After": "60"}
         )
 
 def _record_failed_attempt(client_ip: str):
@@ -44,6 +48,7 @@ def _clear_failed_attempts(client_ip: str):
     _failed_login_attempts.pop(client_ip, None)
 
 @router.post("/login", response_model=Token)
+@rate_limit(max_requests=5, window_seconds=60, key_prefix="login")
 def login_access_token(
     request: Request,
     db: Session = Depends(get_db),
@@ -52,7 +57,7 @@ def login_access_token(
     """
     OAuth2 compatible token login, con protección anti-fuerza bruta y rate limiting.
     """
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     _check_rate_limit(client_ip, form_data.username)
 
     try:
@@ -93,9 +98,10 @@ def login_access_token(
         _clear_failed_attempts(client_ip)
 
         access_token_expires = timedelta(minutes=security.settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        user_tv = getattr(user, "token_version", 1)
         return {
             "access_token": security.create_access_token(
-                user.id, expires_delta=access_token_expires
+                user.id, expires_delta=access_token_expires, token_version=user_tv
             ),
             "token_type": "bearer",
         }
@@ -364,4 +370,55 @@ def register_invited_user(
     db.refresh(db_user)
     
     return db_user
+
+
+@router.post("/panic-revoke-all")
+def panic_revoke_all_sessions(
+    current_user: User = Depends(get_current_active_admin),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    🚨 BOTÓN DE PÁNICO (Zero-Trust Security):
+    Revoca inmediatamente el 100% de las sesiones y tokens JWT activos en todo el sistema.
+    Requiere rol de Administrador.
+    """
+    revocation_ts = trigger_global_panic_revocation()
+    # Incrementar token_version de todos los usuarios en BD para persistencia
+    try:
+        users = db.query(User).all()
+        for u in users:
+            u.token_version = (u.token_version or 1) + 1
+            db.add(u)
+        db.commit()
+    except Exception as e:
+        logger.error(f"Error actualizando token_version en BD durante pánico: {e}")
+        db.rollback()
+
+    logger.critical(
+        f"🚨 [PANIC_BUTTON_ACTIVATED] El Super Administrador '{current_user.email}' ejecutó revocación global de sesiones (TS: {revocation_ts})."
+    )
+    return {
+        "status": "success",
+        "message": "Todas las sesiones activas del CRM han sido revocadas con éxito.",
+        "revocation_timestamp": revocation_ts
+    }
+
+
+@router.post("/logout-all-devices")
+def logout_all_devices(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Cierra sesión en todos los demás dispositivos del usuario actual incrementando su token_version.
+    """
+    current_user.token_version = (current_user.token_version or 1) + 1
+    db.add(current_user)
+    db.commit()
+    logger.info(f"Usuario '{current_user.email}' revocó todas sus sesiones activas (Nueva TV: {current_user.token_version}).")
+    return {
+        "status": "success",
+        "message": "Sesiones cerradas en todos tus dispositivos exitosamente."
+    }
+
 

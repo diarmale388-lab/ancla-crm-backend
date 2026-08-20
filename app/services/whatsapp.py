@@ -46,12 +46,13 @@ class WhatsAppService:
         print(f"[WHATSAPP_SEND] Texto exacto despachado:\n\"{safe_log_text}\"\n")
         logger.info(f"[WHATSAPP_SEND] send_text_message to {to_phone}: '{safe_log_text[:100]}...'")
 
+        has_url = bool(re.search(r'https?://', message_text))
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
             "to": to_phone,
             "type": "text",
-            "text": {"preview_url": False, "body": message_text}
+            "text": {"preview_url": has_url, "body": message_text}
         }
 
         max_retries = 3

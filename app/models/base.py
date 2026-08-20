@@ -68,6 +68,9 @@ class User(Base):
     created_at: Mapped[dt_module.datetime] = mapped_column(DateTime, default=dt_module.datetime.utcnow, nullable=False)
     updated_at: Mapped[dt_module.datetime] = mapped_column(DateTime, default=dt_module.datetime.utcnow, onupdate=dt_module.datetime.utcnow, nullable=False)
     
+    # Control de sesiones y revocación instantánea (Botón de Pánico)
+    token_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    
     # Credenciales de Google OAuth2 del asesor
     google_access_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     google_refresh_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

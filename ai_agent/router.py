@@ -6,13 +6,16 @@ Permite invocar el grafo de LangGraph de forma asíncrona enviando el número de
 como thread_id de sesión.
 """
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Request
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from langchain_core.messages import HumanMessage
+import logging
 
 from ai_agent.graph import sofi_ai_agent
+from app.core.rate_limiter import rate_limit
 
+logger = logging.getLogger("ai_agent_router")
 
 router = APIRouter(prefix="/api/v1/ai", tags=["Sofi AI Agent"])
 
@@ -35,14 +38,10 @@ class AIChatResponse(BaseModel):
 
 
 @router.post("/chat", response_model=AIChatResponse)
-async def chat_with_sofi(request: AIChatRequest):
+@rate_limit(max_requests=30, window_seconds=60, key_prefix="ai_chat")
+async def chat_with_sofi(request_http: Request, request: AIChatRequest):
     """
-    Endpoint principal para interactuar con Sofi AI.
-    
-    1. Recibe la petición con teléfono y contenido del mensaje.
-    2. Construye el estado inicial e invoca el StateGraph de LangGraph.
-    3. Si chatbot_enabled es False, retorna inmediatamente indicando inactividad.
-    4. Usa `phone` como thread_id para aislar de forma segura la sesión del cliente.
+    Endpoint principal para interactuar con Sofi AI con protección de Rate Limiting y Trazabilidad.
     """
     if not request.phone:
         raise HTTPException(
@@ -91,10 +90,12 @@ async def chat_with_sofi(request: AIChatRequest):
             executed_tools=[]
         )
     except Exception as e:
+        logger.error(f"Error ejecutando Sofi AI Agent para {request.phone}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error en la ejecución de Sofi AI Agent: {str(e)}"
+            detail="Error interno procesando la respuesta del agente IA."
         )
+
 
 
 @router.get("/health")

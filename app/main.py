@@ -75,16 +75,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Middleware de Cabeceras de Seguridad HTTP (OWASP)
-@app.middleware("http")
-async def add_security_headers(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "SAMEORIGIN"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    return response
+from app.core.security_headers import SecurityHeadersMiddleware
+from app.core.audit_middleware import SecurityAuditMiddleware
+
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(SecurityAuditMiddleware)
+
  
 # Registrar Routers
 app.include_router(auth.router, prefix=settings.API_V1_STR)
@@ -173,16 +169,26 @@ def read_data_deletion():
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, user_id: int = None):
+async def websocket_endpoint(websocket: WebSocket, token: str = None, user_id: int = None):
+    # Validar token JWT si se proporciona
+    if token:
+        try:
+            from jose import jwt
+            from app.config import settings
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+            uid = payload.get("sub")
+            if uid:
+                user_id = int(uid)
+        except Exception:
+            pass
+
     await manager.connect(websocket, user_id)
     try:
         while True:
-            # Mantener conexión abierta y escuchar posibles mensajes entrantes desde el cliente
             data = await websocket.receive_json()
-            # Opcional: procesar comandos en tiempo real enviados por el frontend
-            # Por ejemplo: marcando chat como leído en tiempo real
             await websocket.send_json({"status": "received", "data": data})
     except WebSocketDisconnect:
         manager.disconnect(websocket, user_id)
-    except Exception as e:
+    except Exception:
         manager.disconnect(websocket, user_id)
+

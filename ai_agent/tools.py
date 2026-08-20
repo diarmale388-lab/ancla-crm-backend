@@ -539,11 +539,22 @@ async def generar_y_enviar_propuesta_pdf(datos_cliente: Dict[str, Any]) -> str:
 
         env = Environment(loader=FileSystemLoader(templates_dir), autoescape=True)
         template = env.get_template("propuesta.html.j2")
-        html_renderizado = template.render(**datos_cliente)
+        # 2. Generación del PDF (CPU-bound) con url_fetcher securizado (Anti-SSRF / Anti-LFI)
+        def _safe_url_fetcher(url):
+            from urllib.parse import urlparse
+            import weasyprint
+            parsed = urlparse(url)
+            # Bloquear esquemas locales y peligrosos
+            if parsed.scheme in ["file", "ftp", "gopher"]:
+                raise ValueError(f"Acceso denegado a esquema no seguro: {parsed.scheme}")
+            # Bloquear acceso a localhost / metadata cloud
+            hostname = (parsed.hostname or "").lower()
+            if hostname in ["localhost", "127.0.0.1", "::1", "169.254.169.254"] or hostname.startswith("10.") or hostname.startswith("192.168."):
+                raise ValueError(f"Acceso denegado a red privada/interna: {hostname}")
+            return weasyprint.default_url_fetcher(url)
 
-        # 2. Generación del PDF (CPU-bound) envuelto en asyncio.to_thread
         def _build_pdf_bytes(html_str: str) -> bytes:
-            return HTML(string=html_str).write_pdf()
+            return HTML(string=html_str, url_fetcher=_safe_url_fetcher).write_pdf()
 
         pdf_bytes = await asyncio.to_thread(_build_pdf_bytes, html_renderizado)
 
