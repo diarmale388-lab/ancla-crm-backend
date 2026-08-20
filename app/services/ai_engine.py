@@ -148,39 +148,41 @@ class AIEngine:
 
         try:
             final_state = await sofi_ai_agent.ainvoke(input_state, config=config)
-            messages = final_state.get("messages", [])
-            for msg in reversed(messages):
-                # Descartar mensajes intermedios de herramientas o llamadas pendietes
-                tool_calls = getattr(msg, "tool_calls", None)
-                if tool_calls and len(tool_calls) > 0:
-                    continue
-                if getattr(msg, "type", "") == "tool":
-                    continue
-                if getattr(msg, "type", "") != "ai" and not isinstance(msg, AIMessage):
-                    continue
-                
-                content_val = getattr(msg, "content", "")
-                if isinstance(content_val, list):
-                    text_parts = []
-                    for item in content_val:
-                        if isinstance(item, dict):
-                            text_parts.append(item.get("text", ""))
-                        elif isinstance(item, str):
-                            text_parts.append(item)
-                    content_str = "".join(text_parts).strip()
-                else:
-                    content_str = str(content_val or "").strip()
+            initial_msg_count = len(input_state.get("messages", []))
+            all_state_msgs = final_state.get("messages", [])
+            new_msgs = all_state_msgs[initial_msg_count:] if len(all_state_msgs) > initial_msg_count else all_state_msgs[-1:]
 
-                if content_str and content_str.lower() != "none":
-                    if "so tomorrow is" in content_str.lower() or (len(content_str) < 90 and content_str.startswith("2026-")):
-                        continue
-                    try:
-                        safe_log = content_str[:120].encode('ascii', errors='replace').decode('ascii')
-                        print(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente: '{safe_log}...'")
-                    except Exception:
-                        pass
-                    logger.info(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente")
-                    return content_str
+            # Recopilar los fragmentos de texto generados por la IA exclusivamente en este turno
+            ai_turn_texts = []
+            for msg in new_msgs:
+                if getattr(msg, "type", "") == "ai" or isinstance(msg, AIMessage):
+                    content_val = getattr(msg, "content", "")
+                    if isinstance(content_val, list):
+                        text_parts = [item.get("text", "") if isinstance(item, dict) else str(item) for item in content_val]
+                        content_str = "".join(text_parts).strip()
+                    else:
+                        content_str = str(content_val or "").strip()
+
+                    if content_str and content_str.lower() != "none":
+                        # Limpiar frases internas de transición de herramientas
+                        lines = [
+                            l for l in content_str.split("\n")
+                            if not (l.lower().startswith("voy a consultar") or l.lower().startswith("permíteme consultar") or l.lower().startswith("voy a revisar"))
+                        ]
+                        cleaned_chunk = "\n".join(lines).strip()
+                        if cleaned_chunk and cleaned_chunk not in ai_turn_texts:
+                            ai_turn_texts.append(cleaned_chunk)
+
+            if ai_turn_texts:
+                full_reply = "\n\n".join(ai_turn_texts).strip()
+                try:
+                    safe_log = full_reply[:140].encode('ascii', errors='replace').decode('ascii')
+                    print(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente: '{safe_log}...'")
+                except Exception:
+                    pass
+                logger.info("[AI_ENGINE] Respuesta generada exitosamente por el Agente")
+                return full_reply
+
             print("[AI_ENGINE] Advertencia: No se encontró ningún mensaje válido en el estado final del agente.")
             return None
 
