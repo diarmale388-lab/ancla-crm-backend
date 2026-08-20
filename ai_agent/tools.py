@@ -184,20 +184,16 @@ async def consultar_disponibilidad(
             user_avail_blocks = []
             target_modality = "PRESENCIAL" if is_presencial else "VIRTUAL"
             slot_duration_min = 60 if is_presencial else 30
-            buffer_time_min = 15 if is_presencial else 10
 
             try:
                 from app.database import SessionLocal
                 from app.models.base import Availability, SystemSetting
                 db_av = SessionLocal()
                 
-                # Leer parámetros de duración y descanso configurados en el CRM
+                # Leer parámetro de duración configurado en el CRM
                 sd_sett = db_av.query(SystemSetting).filter(SystemSetting.key == f"slot_duration_{target_modality.lower()}").first()
                 if sd_sett and sd_sett.value and sd_sett.value.isdigit():
                     slot_duration_min = int(sd_sett.value)
-                bf_sett = db_av.query(SystemSetting).filter(SystemSetting.key == f"buffer_time_{target_modality.lower()}").first()
-                if bf_sett and bf_sett.value and bf_sett.value.isdigit():
-                    buffer_time_min = int(bf_sett.value)
 
                 # Consultar bloques específicos de la modalidad (priorizar admin/user 1)
                 user_avail_blocks = db_av.query(Availability).filter(
@@ -238,7 +234,7 @@ async def consultar_disponibilidad(
             elif user_avail_blocks and len(user_avail_blocks) > 0:
                 # 🎯 LECTURA 100% DINÁMICA DE BLOQUES CONFIGURADOS EN EL MODAL DE LA UI (Excluye almuerzos automáticamente)
                 candidate_slots = []
-                step_minutes = max(15, slot_duration_min + buffer_time_min)
+                step_minutes = max(15, slot_duration_min)
                 seen_slots = set()
                 for blk in user_avail_blocks:
                     st = str(blk.start_time).strip() # ej "09:30:00" o "09:30"
@@ -257,7 +253,7 @@ async def consultar_disponibilidad(
                         print("Error parseando bloque horario:", parse_err)
                         pass
                 if not candidate_slots:
-                    candidate_slots = ["09:30 AM", "10:30 AM", "11:30 AM"] if is_presencial else ["10:00 AM", "11:30 AM", "02:30 PM"]
+                    candidate_slots = ["09:30 AM", "10:30 AM", "11:30 AM"] if is_presencial else ["10:00 AM", "10:30 AM", "11:00 AM"]
             elif weekday == 5: # Fallback Sábado
                 candidate_slots = ["09:30 AM", "10:30 AM", "11:30 AM", "12:30 PM"] if is_presencial else ["10:00 AM", "11:00 AM", "12:00 PM"]
             else: # Fallback Lunes a Viernes
