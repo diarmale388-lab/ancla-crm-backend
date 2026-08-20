@@ -87,20 +87,27 @@ async def fetch_user_context(phone: str) -> Dict[str, Any]:
 
 
 @tool
-async def consultar_disponibilidad(fecha_solicitada: str, modalidad: str) -> Dict[str, Any]:
+async def consultar_disponibilidad(
+    fecha_solicitada: Optional[str] = "hoy",
+    modalidad: Optional[str] = "VIRTUAL"
+) -> Dict[str, Any]:
     """
     Consulta la disponibilidad de franjas horarias en la agenda comercial de ANCLA Special Projects.
+    Distingue automáticamente entre modalidad PRESENCIAL (Showroom Armenia) y VIRTUAL (Videollamada / Llamada).
+    
+    Args:
+        fecha_solicitada: Fecha deseada de la cita (Ej: '2026-08-21', 'hoy', 'mañana'). Por defecto 'hoy'.
+        modalidad: 'PRESENCIAL' (Showroom Armenia) o 'VIRTUAL' (Google Meet / Llamada). Por defecto 'VIRTUAL'.
     """
     try:
         from collections import Counter
         bogota_tz = dt_tz.timezone(dt_tz.timedelta(hours=-5))
         now_bogota = dt_tz.datetime.now(dt_tz.timezone.utc).astimezone(bogota_tz)
 
-        
-        fecha_clean = fecha_solicitada.lower().strip()
+        fecha_clean = str(fecha_solicitada or "hoy").lower().strip()
         is_today = False
         
-        if fecha_clean in ["hoy", "today", "ahora"]:
+        if fecha_clean in ["hoy", "today", "ahora", ""]:
             target_date = now_bogota.date()
             is_today = True
         elif fecha_clean in ["manana", "mañana", "tomorrow"]:
@@ -111,7 +118,7 @@ async def consultar_disponibilidad(fecha_solicitada: str, modalidad: str) -> Dic
                 if target_date == now_bogota.date():
                     is_today = True
             except ValueError:
-                # Si viene texto no formateado, asume la fecha de hoy o mañana según hora actual
+                # Si viene texto no formateado, asume la fecha de hoy
                 target_date = now_bogota.date()
                 is_today = True
 
@@ -140,7 +147,8 @@ async def consultar_disponibilidad(fecha_solicitada: str, modalidad: str) -> Dic
         except Exception as db_err:
             pass
 
-        is_presencial = "PRESENCIAL" in modalidad.upper() or "SHOWROOM" in modalidad.upper()
+        modality_str = str(modalidad or "VIRTUAL").upper()
+        is_presencial = any(w in modality_str for w in ["PRESENCIAL", "SHOWROOM", "VISITA", "ARMENIA", "FISICA", "FÍSICA"])
         max_capacity = 2 if is_presencial else 1
 
         # Si el día solicitado no tiene cupos disponibles o es Domingo, buscar automáticamente en los días siguientes
