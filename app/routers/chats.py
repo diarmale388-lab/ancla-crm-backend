@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, time, timedelta
 from typing import List, Any
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form, Query, WebSocket, WebSocketDisconnect, BackgroundTasks
 from sqlalchemy.orm import Session
@@ -948,6 +949,305 @@ def get_agents(
     """
     agents = db.query(User).filter(User.is_active == True).all()
     return [{"id": a.id, "full_name": a.full_name, "email": a.email, "role": a.role} for a in agents]
+
+
+class SpecialRequestApprovePayload(BaseModel):
+    datetime: str
+    appointment_type: Optional[str] = "VIRTUAL"
+    user_id: Optional[int] = 3
+    notes: Optional[str] = None
+
+class SpecialRequestCounterPayload(BaseModel):
+    proposed_datetime: str
+    notes: Optional[str] = None
+
+class SpecialRequestDeclinePayload(BaseModel):
+    reason: Optional[str] = "Agenda completa"
+
+
+def _parse_iso_or_custom_datetime(dt_str: str) -> datetime:
+    clean = dt_str.strip().replace("T", " ")
+    for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d", "%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M"]:
+        try:
+            return datetime.strptime(clean, fmt)
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(dt_str.strip())
+    except Exception:
+        raise ValueError(f"No se pudo parsear la fecha: {dt_str}")
+
+
+@router.get("/{contact_id}/special-request")
+def get_special_request_status(
+    contact_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Any:
+    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contacto no encontrado")
+
+    state = contact.scheduling_state or ""
+    has_request = "SPECIAL_REQUEST" in state.upper() or "NOCTURNA" in state.upper() or "ESPECIAL" in state.upper()
+    
+    last_system_note = db.query(Message).filter(
+        Message.contact_id == contact_id,
+        Message.sender_type == SenderType.SYSTEM,
+        Message.content.contains("SOLICITUD CITA NOCTURNA")
+    ).order_by(Message.created_at.desc()).first()
+
+    if last_system_note and not has_request:
+        has_request = True
+        state = "SPECIAL_REQUEST_PENDING"
+
+    return {
+        "has_request": has_request,
+        "scheduling_state": state,
+        "proposed_datetime": contact.proposed_datetime.isoformat() if contact.proposed_datetime else None,
+        "note_details": last_system_note.content if last_system_note else None,
+        "contact_id": contact.id,
+        "first_name": contact.first_name,
+        "phone": contact.phone
+    }
+
+
+@router.post("/{contact_id}/special-request/approve")
+async def approve_special_request(
+    contact_id: int,
+    payload: SpecialRequestApprovePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Any:
+    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contacto no encontrado")
+
+    try:
+        appt_dt = _parse_iso_or_custom_datetime(payload.datetime)
+    except Exception as pe:
+        raise HTTPException(status_code=400, detail=f"Formato de fecha inválido: {payload.datetime}")
+
+    target_user_id = payload.user_id or contact.assigned_user_id or 3
+
+    # 1. Crear / Actualizar Cita en PostgreSQL
+    from app.models.base import Appointment, PipelineStage
+    
+    existing_appt = db.query(Appointment).filter(
+        Appointment.contact_id == contact.id,
+        Appointment.status == "CONFIRMED"
+    ).first()
+
+    if existing_appt:
+        existing_appt.datetime = appt_dt
+        existing_appt.user_id = target_user_id
+        existing_appt.appointment_type = payload.appointment_type or "VIRTUAL"
+        existing_appt.notes = payload.notes or "Cita Extraordinaria VIP Aprobada por Dirección Comercial"
+        db_appt = existing_appt
+    else:
+        db_appt = Appointment(
+            contact_id=contact.id,
+            user_id=target_user_id,
+            datetime=appt_dt,
+            status="CONFIRMED",
+            appointment_type=payload.appointment_type or "VIRTUAL",
+            notes=payload.notes or "Cita Extraordinaria VIP Aprobada por Dirección Comercial"
+        )
+        db.add(db_appt)
+
+    # 2. Actualizar Estado del Contacto y Pipeline
+    contact.scheduling_state = "SPECIAL_REQUEST_APPROVED"
+    contact.assigned_user_id = target_user_id
+    
+    stages = db.query(PipelineStage).all()
+    stage_by_name = {s.name: s.id for s in stages}
+    cita_agendada_id = stage_by_name.get("Cita Agendada") or stage_by_name.get("Llamada Agendada")
+    if cita_agendada_id:
+        contact.pipeline_stage_id = cita_agendada_id
+
+    db.add(contact)
+    db.commit()
+    db.refresh(db_appt)
+    db.refresh(contact)
+
+    # 3. Formatear Fecha y Hora en Español
+    meses_es = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+    dias_es = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+    dia_nombre = dias_es[appt_dt.weekday()]
+    mes_nombre = meses_es[appt_dt.month - 1]
+    hora_12 = appt_dt.strftime("%I:%M %p").lstrip("0")
+    formatted_date_str = f"{dia_nombre.capitalize()}, {appt_dt.day} de {mes_nombre} a las {hora_12}"
+
+    # 4. Redactar y Enviar Mensaje Oficial por WhatsApp
+    client_name = contact.first_name or "Cliente"
+    whatsapp_text = (
+        f"¡Excelente noticia, {client_name}! 😊 Nuestra Directora Comercial **Liliana León** ha revisado tu solicitud y con gusto te atenderá en este espacio extraordinario.\n\n"
+        f"**Detalles de tu Asesoría VIP:**\n"
+        f"- **Atiende:** Liliana León (Dirección Comercial)\n"
+        f"- **Modalidad:** Asesoría Virtual (Google Meet / Videollamada)\n"
+        f"- **Fecha y Hora:** {formatted_date_str}\n"
+        f"- **Enlace:** Se compartirá por este medio antes de iniciar la sesión.\n\n"
+        f"Nuestro equipo de expertos estará listo para compartirte los planos técnicos, renders 3D y la cotización personalizada de tu proyecto modular. ¡Nos vemos pronto! 🏡✨"
+    )
+
+    db_msg = Message(
+        contact_id=contact.id,
+        sender_type=SenderType.AI,
+        channel=ChannelType.WHATSAPP,
+        message_type=MessageType.TEXT,
+        content=whatsapp_text,
+        status=MessageStatus.SENT
+    )
+    db.add(db_msg)
+    db.commit()
+
+    try:
+        await whatsapp_service.send_text_message(to_phone=contact.phone, message_text=whatsapp_text, db=db)
+    except Exception as we:
+        logger.error(f"Error enviando confirmación WhatsApp en approve_special_request: {we}")
+
+    # 5. Broadcast WebSocket a la UI
+    ws_payload = {
+        "event": "special_request_approved",
+        "data": {
+            "contact_id": contact.id,
+            "appointment_id": db_appt.id,
+            "datetime": db_appt.datetime.isoformat(),
+            "scheduling_state": contact.scheduling_state,
+            "message": whatsapp_text
+        }
+    }
+    await manager.broadcast(ws_payload)
+
+    return {
+        "status": "success",
+        "message": "Cita extraordinaria aprobada y confirmación enviada con éxito.",
+        "appointment_id": db_appt.id,
+        "datetime": formatted_date_str
+    }
+
+
+@router.post("/{contact_id}/special-request/counter-offer")
+async def counter_offer_special_request(
+    contact_id: int,
+    payload: SpecialRequestCounterPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Any:
+    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contacto no encontrado")
+
+    try:
+        prop_dt = _parse_iso_or_custom_datetime(payload.proposed_datetime)
+    except Exception as pe:
+        raise HTTPException(status_code=400, detail=f"Formato de fecha inválido: {payload.proposed_datetime}")
+
+    contact.scheduling_state = "SPECIAL_REQUEST_PROPOSED"
+    contact.proposed_datetime = prop_dt
+    db.add(contact)
+    db.commit()
+
+    meses_es = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+    dias_es = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+    dia_nombre = dias_es[prop_dt.weekday()]
+    mes_nombre = meses_es[prop_dt.month - 1]
+    hora_12 = prop_dt.strftime("%I:%M %p").lstrip("0")
+    formatted_date_str = f"{dia_nombre.capitalize()}, {prop_dt.day} de {mes_nombre} a las {hora_12}"
+
+    client_name = contact.first_name or "Cliente"
+    whatsapp_text = (
+        f"Hola {client_name}, te informo que **Liliana León (Dirección Comercial)** revisó tu caso. "
+        f"Para el horario solicitado anteriormente ya cuenta con la agenda completa, pero con mucho gusto te propone coordinar tu **Asesoría Virtual** para el **{formatted_date_str}**.\n\n"
+        f"¿Te queda cómodo este espacio para dejártelo reservado de inmediato? 😊"
+    )
+
+    db_msg = Message(
+        contact_id=contact.id,
+        sender_type=SenderType.AI,
+        channel=ChannelType.WHATSAPP,
+        message_type=MessageType.TEXT,
+        content=whatsapp_text,
+        status=MessageStatus.SENT
+    )
+    db.add(db_msg)
+    db.commit()
+
+    try:
+        await whatsapp_service.send_text_message(to_phone=contact.phone, message_text=whatsapp_text, db=db)
+    except Exception as we:
+        logger.error(f"Error enviando contrapropuesta WhatsApp: {we}")
+
+    ws_payload = {
+        "event": "special_request_countered",
+        "data": {
+            "contact_id": contact.id,
+            "proposed_datetime": prop_dt.isoformat(),
+            "scheduling_state": contact.scheduling_state,
+            "message": whatsapp_text
+        }
+    }
+    await manager.broadcast(ws_payload)
+
+    return {
+        "status": "success",
+        "message": "Contrapropuesta enviada al cliente con éxito.",
+        "proposed_datetime": formatted_date_str
+    }
+
+
+@router.post("/{contact_id}/special-request/decline")
+async def decline_special_request(
+    contact_id: int,
+    payload: SpecialRequestDeclinePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Any:
+    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contacto no encontrado")
+
+    contact.scheduling_state = "SPECIAL_REQUEST_DECLINED"
+    db.add(contact)
+    db.commit()
+
+    client_name = contact.first_name or "Cliente"
+    whatsapp_text = (
+        f"Hola {client_name}, por el momento las agendas extraordinarias nocturnas de Liliana se encuentran copadas. "
+        f"Sin embargo, nuestro equipo de expertos cuenta con total disponibilidad de **Lunes a Viernes en horario de oficina (9:00 AM a 5:00 PM)**.\n\n"
+        f"Si en algún momento tienes un espacio diurno disponible o deseas que te compartamos información técnica preliminar, con todo gusto te atenderemos. 😊"
+    )
+
+    db_msg = Message(
+        contact_id=contact.id,
+        sender_type=SenderType.AI,
+        channel=ChannelType.WHATSAPP,
+        message_type=MessageType.TEXT,
+        content=whatsapp_text,
+        status=MessageStatus.SENT
+    )
+    db.add(db_msg)
+    db.commit()
+
+    try:
+        await whatsapp_service.send_text_message(to_phone=contact.phone, message_text=whatsapp_text, db=db)
+    except Exception as we:
+        logger.error(f"Error enviando declinación WhatsApp: {we}")
+
+    ws_payload = {
+        "event": "special_request_declined",
+        "data": {
+            "contact_id": contact.id,
+            "scheduling_state": contact.scheduling_state
+        }
+    }
+    await manager.broadcast(ws_payload)
+
+    return {
+        "status": "success",
+        "message": "Solicitud declinada amablemente.",
+        "scheduling_state": contact.scheduling_state
+    }
 
 
 from fastapi.responses import StreamingResponse
