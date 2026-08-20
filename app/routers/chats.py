@@ -564,18 +564,25 @@ async def update_contact_details(
     if payload.doc_rep_legal_url is not None: contact.doc_rep_legal_url = payload.doc_rep_legal_url
     if payload.doc_comprobante_url is not None: contact.doc_comprobante_url = payload.doc_comprobante_url
     if payload.doc_contrato_url is not None: contact.doc_contrato_url = payload.doc_contrato_url
-    if payload.assigned_user_id is not None and payload.assigned_user_id != contact.assigned_user_id:
-        user_role = str(current_user.role or '').upper()
-        if user_role != "ADMIN" and current_user.role != UserRole.ADMIN:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Acceso restringido: Solo los administradores tienen permiso para reasignar prospectos a otros asesores."
+    # Asignación de asesor comercial (abierto para todos los perfiles de asesores y administradores)
+    if "assigned_user_id" in payload.model_dump(exclude_unset=True):
+        new_assigned_id = payload.assigned_user_id if (payload.assigned_user_id and payload.assigned_user_id > 0) else None
+        if new_assigned_id != contact.assigned_user_id:
+            contact.assigned_user_id = new_assigned_id
+            from app.models.base import Appointment
+            db.query(Appointment).filter(Appointment.contact_id == contact.id).update(
+                {"user_id": new_assigned_id}, synchronize_session=False
             )
-        contact.assigned_user_id = payload.assigned_user_id
-        from app.models.base import Appointment
-        db.query(Appointment).filter(Appointment.contact_id == contact.id).update(
-            {"user_id": payload.assigned_user_id}, synchronize_session=False
-        )
+            from app.services.activity import record_activity
+            agent_user = db.query(User).filter(User.id == new_assigned_id).first() if new_assigned_id else None
+            agent_name = agent_user.full_name if agent_user else "Sin Asignar (Liliana / Admin)"
+            record_activity(
+                db=db,
+                contact_id=contact.id,
+                activity_type="advisor_reassigned",
+                description=f"Contacto asignado a: '{agent_name}' por {current_user.full_name}.",
+                user_id=current_user.id
+            )
 
     db.add(contact)
     db.commit()
@@ -586,6 +593,7 @@ async def update_contact_details(
         "event": "contact_details_updated",
         "data": {
             "contact_id": contact.id,
+            "assigned_user_id": contact.assigned_user_id,
             "first_name": contact.first_name,
             "last_name": contact.last_name,
             "email": contact.email,
@@ -617,6 +625,7 @@ async def update_contact_details(
 
     return {"status": "success", "contact": {
         "id": contact.id,
+        "assigned_user_id": contact.assigned_user_id,
         "first_name": contact.first_name,
         "last_name": contact.last_name,
         "email": contact.email,

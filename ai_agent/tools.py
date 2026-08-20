@@ -636,6 +636,86 @@ async def generar_y_enviar_propuesta_pdf(datos_cliente: Dict[str, Any]) -> str:
         return f"ERROR_AL_GENERAR_O_ENVIAR_PROPUESTA: {str(e)}"
 
 
+@tool
+async def solicitar_autorizacion_cita_nocturna(
+    phone: str,
+    user_name: str,
+    horario_propuesto: str,
+    motivo_cliente: str = ""
+) -> Dict[str, Any]:
+    """
+    Registra una solicitud de cita extraordinaria en horario nocturno o fuera de horario comercial habitual,
+    para que la Dirección Comercial (Liliana León) la evalúe y confirme.
+    Emite una alerta inmediata en el CRM (WebPush + Nota interna) para Liliana León y el equipo comercial.
+    
+    Args:
+        phone: Teléfono o identificador del cliente.
+        user_name: Nombre del cliente.
+        horario_propuesto: Horario solicitado por el cliente (ej: 'Hoy 6:30 PM', 'Mañana 7:00 PM', 'Noche').
+        motivo_cliente: Razón por la cual no puede de día (ej: 'Trabaja de día', 'Entregas comunitarias', etc.).
+        
+    Returns:
+        Dict con el resultado del registro de la solicitud.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.models.base import Contact, Message, SenderType, ChannelType, MessageStatus
+        from app.services.push_service import send_webpush_to_all
+
+        db = SessionLocal()
+        clean_phone = phone.replace("+", "").replace(" ", "").replace("-", "") if phone else ""
+        contact = None
+        if clean_phone:
+            contact = db.query(Contact).filter(Contact.phone.ilike(f"%{clean_phone[-10:]}%")).first()
+        if not contact and user_name:
+            contact = db.query(Contact).filter(Contact.first_name.ilike(f"%{user_name.split()[0]}%")).first()
+
+        if contact:
+            # 1. Crear Nota Interna Privada en el Chat
+            note_content = (
+                f"🚨 [SOLICITUD CITA NOCTURNA / ESPECIAL]:\n"
+                f"El cliente {contact.first_name or user_name} ({contact.phone}) solicita asesoría virtual en horario especial: '{horario_propuesto}'.\n"
+                f"Motivo / Restricción: {motivo_cliente or 'No puede en horario diurno'}.\n"
+                f"👉 Requiere visto bueno de Liliana León para confirmar si es posible hoy o se programa para mañana."
+            )
+            internal_note = Message(
+                contact_id=contact.id,
+                sender_type=SenderType.SYSTEM,
+                channel=ChannelType.SYSTEM,
+                content=note_content,
+                status=MessageStatus.DELIVERED
+            )
+            db.add(internal_note)
+            db.commit()
+
+            # 2. Despachar Notificación Push al CRM y Celular de Liliana / Admins
+            push_payload = {
+                "title": f"🌙 Solicitud Cita Nocturna: {contact.first_name or user_name}",
+                "body": f"Solicita: {horario_propuesto}. Toca para revisar en el CRM.",
+                "icon": "/ancla_app_icon_192.png",
+                "badge": "/notification-badge.png",
+                "tag": f"vip_night_{contact.id}",
+                "data": {
+                    "url": f"/?tab=chats&contact_id={contact.id}",
+                    "contact_id": contact.id,
+                    "phone": contact.phone
+                }
+            }
+            try:
+                await send_webpush_to_all(payload=push_payload, db=db)
+            except Exception as pe:
+                pass
+
+        db.close()
+        return {
+            "status": "success",
+            "message": "Solicitud de cita nocturna enviada a Liliana León. Notificación emitida en el CRM.",
+            "horario_propuesto": horario_propuesto
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 # Lista consolidada de herramientas para bind_tools en nodos del grafo
 ALL_AI_TOOLS = [
     fetch_user_context,
@@ -643,6 +723,7 @@ ALL_AI_TOOLS = [
     save_appointment,
     update_lead_status,
     request_human_handover,
-    generar_y_enviar_propuesta_pdf
+    generar_y_enviar_propuesta_pdf,
+    solicitar_autorizacion_cita_nocturna
 ]
 
