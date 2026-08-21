@@ -31,22 +31,56 @@ SCOPES = [
     'https://www.googleapis.com/auth/drive'
 ]
 
+DEFAULT_SERVICE_ACCOUNT_INFO = {
+  "type": "service_account",
+  "project_id": "ancla-crm",
+  "private_key_id": "9d7f78929a031b83a83e56e2e312d91cccb78a0b",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCi7vxcxMV+L5MR\nEdrLF6fEFiaEOV/lG3WivqcgtW9Tf3wzcnHDX6W7TtGf+asjslvA3Or7tKcEBAVC\nJiu5fBLB2iewIMsxzapCOIMzi/G6oPWp1lzkS8JpLE7mkOMqamhZUm1am4e0JPXc\nTHnjn9Um2TeAlHhZUUJxe9aPNE/6IRaa9FNH60SEEkW2eyiKopVT0w98ndLT8NO7\nn1FcjLCcHaljr5FkKjFa0Wdndpjf4Qdq4Kw6q/TpQfwk4PS11GpPQxGs/sGSOM7g\nkuNc4CJNiTGcIkBECKcjxmyd7DagF2Kw/BhdhVVZ+UUX7Q29h/23Ibc3ZlQGVE9j\ntkKYYhjrAgMBAAECggEAAgkwPRNP9m778vT0QdQAJCdn5s1Cuspx8o0lHUSdgsxI\n57Z3Ez5kN0FzLBqpPhWlJ0IVBTBXyYL1WXZZo7eYEmg6VVPFLJ08+RcOSKKBUqT4\ncBCK8gCIvUCw+0xb+LRorMkM/CdaXD1j/XmbjxhFrqnjLPRt+b7vfU4gIbaN7ODg\nD7e1TnXOjrW460U2DW1KfuIZJkJzMJzy9wpcj6MxaYDEmePebS4GdcLyw6AUjVj2\n7TALqDipYlieuTMncAMAWhrtWVu0rpqFmRpf1r7H1Pu80yG75SuKDUg3T37RjTMb\nwfyCS2KQxdyU9NCqeXsX/Eudxb7px5NyxzBFaKAStQKBgQDM6KSL9JGNum4Vm2Tw\n+/RCk06gvOVPHXbV1lLd4M1SQ25FZ/EgnaBcOg1072YFv1njVAxnbkk9fcZbHrCZ\nq5lw+02fvcn4XFQKw6Xoxn0OBzq2lPjdCG+qRKhko+S+Fu523c17qF1lV7DE8Iit\neCIgZYN4T3OoV4Z2ZH/rfOrN3QKBgQDLjw7nUOBqARsA7z+xnxRihA9BJtI6KonB\nIG/erd+9aeqZNBYfqwseEKnF9gDTdFWphykJKXHwaDL8pTEQHfG1XQ/4FPPv6MU5\nBeUGfe87PNgHRsKncatM1Oejd7DsqpdBk6NRLo6E/hO5xQlgka+O6yR+EOeon2Iq\nk+hYA9aJZwKBgGNATHN+AwKjSq8slbgkUivtLiitVmT74JOzPHA8czdlcgQsVJ93\nujTx6ZK6YrBl/yQdkeSHhvJB+dIpC2FjvO78ypyVUT77ebm9Cp+1hN1GoynM/r4R\nWAUhPG+C80kf0mHBDcbXxmVQFE9QMuPTTLRkd0nPMjZYLskp5MwrtZABAoGAb6CE\n2L7WQetXRpzsvdfx0tB+mQjT8kfPgRPrpR6Oeo2xs9AHbdhbYWJb544vB8ZdD3lq\nPHb435AUnc1s6VyyZvWgwzeiSebI+KtN29CFt2N3SA46wp4oBRsf59nEMRSfm7t9\nrRAt4ap/YLk3mjhqIKK8QVG96A93QsgXeuSn6nMCgYEAkv8AdfTJmtMzZnEJ14lW\nlKZ6rKQdGMvd4YqjrMOiA8oWs8NjCwARrxk0hRcXoghpHqOusl1LAuTYactkvCGD\n17R43CDuKKYtbd2TWOlYDQbQieGuozZ0Lm6EF4Xi2OzQ0YT2ePeaOgiwZlETUjEC\nN+wMp9opzQmvjCb0esZUthc=\n-----END PRIVATE KEY-----\n",
+  "client_email": "drive-bot-ancla@ancla-crm.iam.gserviceaccount.com",
+  "client_id": "114246358670558880936",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/drive-bot-ancla%40ancla-crm.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
+
 def _get_google_credentials():
     """
-    Intenta cargar el archivo de credenciales de Google Service Account credentials.json.
-    Retorna las credenciales o None si no existe el archivo.
+    Carga las credenciales de Google Service Account con búsqueda multi-entorno:
+    1. Variable de entorno GOOGLE_SERVICE_ACCOUNT_JSON
+    2. Archivo credentials.json en rutas locales o relativas
+    3. Diccionario embebido DEFAULT_SERVICE_ACCOUNT_INFO
     """
-    if os.path.exists(CREDENTIALS_FILE):
+    # 1. Variable de entorno
+    env_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON") or os.getenv("GOOGLE_CREDENTIALS_JSON")
+    if env_json:
         try:
-            creds = service_account.Credentials.from_service_account_file(
-                CREDENTIALS_FILE, 
-                scopes=SCOPES
-            )
-            return creds
+            info = json.loads(env_json) if isinstance(env_json, str) else env_json
+            return service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
         except Exception as e:
-            logger.error(f"Error cargando credenciales de cuenta de servicio de Google: {e}")
-            return None
-    return None
+            logger.error(f"Error cargando credenciales de Google desde env: {e}")
+
+    # 2. Rutas tentativas en disco
+    possible_paths = [
+        CREDENTIALS_FILE,
+        os.path.join(os.getcwd(), "credentials.json"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "credentials.json"),
+        "credentials.json"
+    ]
+    for path in possible_paths:
+        if os.path.exists(path):
+            try:
+                return service_account.Credentials.from_service_account_file(path, scopes=SCOPES)
+            except Exception as e:
+                logger.error(f"Error cargando credentials.json desde {path}: {e}")
+
+    # 3. Fallback embebido de producción
+    try:
+        return service_account.Credentials.from_service_account_info(DEFAULT_SERVICE_ACCOUNT_INFO, scopes=SCOPES)
+    except Exception as e:
+        logger.error(f"Error cargando credenciales embebidas de Google: {e}")
+        return None
 
 
 from app.core.crypto import decrypt_value, encrypt_value
