@@ -132,6 +132,26 @@ class AIEngine:
         except Exception:
             pass
 
+        # Inyectar estado relacional real desde la base de datos PostgreSQL
+        from app.models.base import Appointment
+        import datetime as dt_tz
+        try:
+            from zoneinfo import ZoneInfo
+            bogota_now = dt_tz.datetime.now(ZoneInfo("America/Bogota"))
+        except Exception:
+            bogota_now = dt_tz.datetime.now(dt_tz.timezone(dt_tz.timedelta(hours=-5)))
+
+        active_appt = db.query(Appointment).filter(
+            Appointment.contact_id == contact.id,
+            Appointment.status.in_(["CONFIRMED", "PENDING"]),
+            Appointment.datetime >= bogota_now.replace(tzinfo=None) - dt_tz.timedelta(hours=2)
+        ).order_by(Appointment.datetime.desc()).first()
+
+        active_appt_str = "Ninguna"
+        if active_appt:
+            mod_str = getattr(active_appt, 'modality', None) or contact.scheduling_state or "Virtual"
+            active_appt_str = f"{active_appt.datetime.strftime('%A %d de %B a las %I:%M %p')} (Modalidad: {mod_str})"
+
         thread_key = f"{contact.phone}_{int(time.time())}"
         config = {"configurable": {"thread_id": thread_key}}
         input_state = {
@@ -140,10 +160,16 @@ class AIEngine:
             "chatbot_enabled": contact.chatbot_enabled,
             "user_name": f"{contact.first_name or ''} {contact.last_name or ''}".strip(),
             "requires_human": False,
-            "metadata": {"scheduling_state": contact.scheduling_state}
+            "metadata": {
+                "scheduling_state": contact.scheduling_state,
+                "has_land": contact.lot_status or "No especificado",
+                "location": contact.lot_city or "No especificado",
+                "active_appointment": active_appt_str,
+                "contact_id": contact.id
+            }
         }
 
-        print(f"[AI_ENGINE] Invocando LangGraph sofi_ai_agent con Teléfono={contact.phone}, SchedulingState={contact.scheduling_state}...")
+        print(f"[AI_ENGINE] Invocando LangGraph sofi_ai_agent con Teléfono={contact.phone}, CitaActiva='{active_appt_str}'...")
         logger.info(f"[AI_ENGINE] Invocando LangGraph sofi_ai_agent con Teléfono={contact.phone}")
 
         try:
