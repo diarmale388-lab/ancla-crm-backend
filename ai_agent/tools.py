@@ -107,20 +107,56 @@ async def consultar_disponibilidad(
         fecha_clean = str(fecha_solicitada or "hoy").lower().strip()
         is_today = False
         
+        dias_map = {
+            "lunes": 0, "monday": 0,
+            "martes": 1, "tuesday": 1,
+            "miercoles": 2, "miércoles": 2, "wednesday": 2,
+            "jueves": 3, "thursday": 3,
+            "viernes": 4, "friday": 4,
+            "sabado": 5, "sábado": 5, "saturday": 5,
+            "domingo": 6, "sunday": 6
+        }
+
         if fecha_clean in ["hoy", "today", "ahora", ""]:
             target_date = now_bogota.date()
             is_today = True
         elif fecha_clean in ["manana", "mañana", "tomorrow"]:
             target_date = (now_bogota + dt_tz.timedelta(days=1)).date()
+        elif "proxima semana" in fecha_clean or "próxima semana" in fecha_clean or "sgte semana" in fecha_clean:
+            days_ahead = (7 - now_bogota.weekday()) % 7
+            if days_ahead == 0:
+                days_ahead = 7
+            target_date = (now_bogota + dt_tz.timedelta(days=days_ahead)).date()
+        elif "fin de semana" in fecha_clean or "finde" in fecha_clean:
+            days_ahead = (5 - now_bogota.weekday()) % 7
+            if days_ahead == 0 and now_bogota.hour >= 13:
+                days_ahead = 7
+            target_date = (now_bogota + dt_tz.timedelta(days=days_ahead)).date()
         else:
+            matched_dt = None
             try:
-                target_date = dt_tz.datetime.strptime(fecha_clean, "%Y-%m-%d").date()
+                matched_dt = dt_tz.datetime.strptime(fecha_clean, "%Y-%m-%d").date()
+                target_date = matched_dt
                 if target_date == now_bogota.date():
                     is_today = True
             except ValueError:
-                # Si viene texto no formateado, asume la fecha de hoy
-                target_date = now_bogota.date()
-                is_today = True
+                pass
+
+            if not matched_dt:
+                matched_day_idx = None
+                for d_name, d_idx in dias_map.items():
+                    if d_name in fecha_clean:
+                        matched_day_idx = d_idx
+                        break
+                
+                if matched_day_idx is not None:
+                    days_ahead = (matched_day_idx - now_bogota.weekday()) % 7
+                    if days_ahead == 0 and now_bogota.hour >= 17:
+                        days_ahead = 7
+                    target_date = (now_bogota + dt_tz.timedelta(days=days_ahead)).date()
+                else:
+                    target_date = now_bogota.date()
+                    is_today = True
 
         # Consulta a BD CRM si está disponible
         slot_counts = Counter()
