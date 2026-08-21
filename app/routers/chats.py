@@ -565,8 +565,12 @@ async def update_contact_details(
     if payload.doc_rep_legal_url is not None: contact.doc_rep_legal_url = payload.doc_rep_legal_url
     if payload.doc_comprobante_url is not None: contact.doc_comprobante_url = payload.doc_comprobante_url
     if payload.doc_contrato_url is not None: contact.doc_contrato_url = payload.doc_contrato_url
-    # Asignación de asesor comercial (abierto para todos los perfiles de asesores y administradores)
+    # Asignación de asesor comercial (Exclusivo para Administradores y Liliana León)
     if "assigned_user_id" in payload.model_dump(exclude_unset=True):
+        role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+        if role_str not in ["admin", "userrole.admin"]:
+            raise HTTPException(status_code=403, detail="Solo los administradores y Liliana León pueden asignar o reasignar prospectos.")
+            
         new_assigned_id = payload.assigned_user_id if (payload.assigned_user_id and payload.assigned_user_id > 0) else None
         if new_assigned_id != contact.assigned_user_id:
             contact.assigned_user_id = new_assigned_id
