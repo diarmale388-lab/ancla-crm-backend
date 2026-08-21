@@ -50,16 +50,17 @@ async def process_appointment_reminders(db: Session):
         time_str = format_time_12h(appt.datetime)
         date_str = format_spanish_date(appt.datetime)
         location_str = contact.lot_city or "tu municipio"
-        meet_url = appt.google_meet_url or DEFAULT_VIP_MEET
+        meet_url = appt.google_meet_url
         is_virtual = (appt.appointment_type or "VIRTUAL").upper() == "VIRTUAL"
 
         # 1. VENTANA 24 HORAS
         if 22 * 3600 <= total_seconds <= 26 * 3600 and not appt.reminder_24h_sent:
             if is_virtual:
+                link_line = f"📲 Tu enlace de Google Meet: {meet_url}\n\n" if meet_url else "📲 Modalidad: Asesoría Virtual (nos conectaremos puntualmente por este medio).\n\n"
                 msg_text = (
                     f"¡Hola {name}! 👋 Te recordamos que mañana {date_str} a las {time_str} tenemos reservada tu *Asesoría Virtual* para tu proyecto en {location_str} 🏡✨.\n\n"
                     f"📍 Nuestro equipo te presentará en pantalla los planos de distribución, renders reales y la cotización personalizada puesta en tu lote.\n\n"
-                    f"📲 Tu enlace de Google Meet: {meet_url}\n\n"
+                    f"{link_line}"
                     f"¡Nos vemos mañana puntualmente!"
                 )
             else:
@@ -91,10 +92,10 @@ async def process_appointment_reminders(db: Session):
         # 2. VENTANA 2 HORAS
         if 90 * 60 <= total_seconds <= 150 * 60 and not appt.reminder_2h_sent:
             if is_virtual:
+                link_line = f"Puedes conectarte fácilmente desde tu celular o computador aquí:\n📲 {meet_url}\n\n" if meet_url else "Nuestro equipo se comunicará contigo puntualmente para iniciar la videollamada.\n\n"
                 msg_text = (
                     f"¡Hola {name}! ⏰ En 2 horas iniciamos tu *Asesoría Virtual* ({time_str}) para tu proyecto en {location_str} 🏡.\n\n"
-                    f"Puedes conectarte fácilmente desde tu celular o computador aquí:\n"
-                    f"📲 {meet_url}\n\n"
+                    f"{link_line}"
                     f"¿Nos confirmas si todo en orden para tu conexión? 😊"
                 )
             else:
@@ -125,9 +126,10 @@ async def process_appointment_reminders(db: Session):
         # 3. VENTANA 15 MINUTOS
         if 5 * 60 <= total_seconds <= 20 * 60 and not appt.reminder_15m_sent:
             if is_virtual:
+                link_line = f"📲 {meet_url}\n\n" if meet_url else ""
                 msg_text = (
-                    f"¡Hola {name}! 👋 En 15 minutos nuestro equipo de expertos estará esperándote en la sala virtual:\n"
-                    f"📲 {meet_url}\n\n"
+                    f"¡Hola {name}! 👋 En 15 minutos nuestro equipo de expertos estará listo para atenderte en tu Asesoría Virtual:\n"
+                    f"{link_line}"
                     f"¡Nos vemos en breve para revisar los planos de tu casa modular! 🏡"
                 )
                 try:

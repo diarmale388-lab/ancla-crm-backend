@@ -224,24 +224,21 @@ async def create_google_calendar_event(db: Session, appointment: Appointment, co
             logger.info(f"Evento real creado en Google Calendar con ID: {event_id} | Meet: {meet_url}")
             print(f"[GOOGLE CALENDAR REAL] Cita agendada exitosamente. Evento ID: {event_id} | Meet: {meet_url}")
         except Exception as e:
-            logger.error(f"Fallo en llamada a API real de Google Calendar, recurriendo a fallback: {e}")
-
-    # Fallback seguro si no se obtuvo Meet dinámico
-    if not meet_url:
-        meet_url = "https://meet.google.com/niv-fvrr-ryh"
+            logger.info(f"Google Calendar no autorizado aún o en espera de permisos de Liliana: {e}")
 
     if not event_id:
         event_id = f"gcal_event_{appointment.id}_{int(datetime.utcnow().timestamp())}"
         event_body["event_id"] = event_id
         event_body["created_at"] = datetime.utcnow().isoformat()
-        event_body["status"] = "simulated"
-        event_body["hangoutLink"] = meet_url
+        event_body["status"] = "pending_calendar_auth"
+        if meet_url:
+            event_body["hangoutLink"] = meet_url
 
         file_path = os.path.join(CALENDAR_SIM_DIR, f"{event_id}.json")
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(event_body, f, indent=4, ensure_ascii=False)
 
-    # Actualizar appointment en base de datos
+    # Actualizar appointment en base de datos solo con datos reales
     appointment.google_event_id = event_id
     appointment.google_meet_url = meet_url
     db.commit()
