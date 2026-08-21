@@ -342,21 +342,36 @@ async def upload_whatsapp_media_to_google_drive(db: Session, file_bytes: bytes, 
         return None
 
 
-async def download_file_from_google_drive(file_id: str) -> Optional[tuple[bytes, str]]:
+async def download_file_from_google_drive(file_id: str, db: Session = None) -> Optional[tuple[bytes, str]]:
     """
-    Descarga los bytes y el mime_type de un archivo guardado en Google Drive.
+    Descarga los bytes y el mime_type de un archivo guardado en Google Drive usando OAuth del admin o cuenta de servicio.
     """
-    creds = _get_google_credentials()
+    creds = None
+    if db:
+        oauth_user = db.query(User).filter(User.google_refresh_token.isnot(None)).first()
+        if oauth_user:
+            creds = _get_advisor_credentials(db, oauth_user.id)
+    if not creds:
+        from app.database import SessionLocal
+        local_db = SessionLocal()
+        try:
+            oauth_user = local_db.query(User).filter(User.google_refresh_token.isnot(None)).first()
+            if oauth_user:
+                creds = _get_advisor_credentials(local_db, oauth_user.id)
+        finally:
+            local_db.close()
+    if not creds:
+        creds = _get_google_credentials()
     if not creds:
         return None
     try:
         service = build('drive', 'v3', credentials=creds)
         # Obtener metadata para el mimeType
-        file_meta = service.files().get(fileId=file_id, fields='mimeType').execute()
-        mime_type = file_meta.get('mimeType', 'application/octet-stream')
+        file_meta = service.files().get(fileId=file_id, fields='mimeType, name', supportsAllDrives=True).execute()
+        mime_type = file_meta.get('mimeType', 'image/jpeg')
         
         # Descargar el contenido
-        content = service.files().get_media(fileId=file_id).execute()
+        content = service.files().get_media(fileId=file_id, supportsAllDrives=True).execute()
         return content, mime_type
     except Exception as e:
         logger.error(f"Error descargando archivo de Google Drive (ID {file_id}): {e}")

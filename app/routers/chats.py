@@ -326,7 +326,7 @@ async def get_chat_media(
         drive_id = media_id.replace("gdrive_", "")
         try:
             from app.services.google_integration import download_file_from_google_drive
-            res = await download_file_from_google_drive(drive_id)
+            res = await download_file_from_google_drive(drive_id, db=db)
             if res:
                 file_bytes, mime_type = res
                 return Response(content=file_bytes, media_type=mime_type)
