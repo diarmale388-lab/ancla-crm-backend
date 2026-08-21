@@ -48,34 +48,37 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
     contact_location = state.get("metadata", {}).get("location", "No especificado")
     contact_active_appointment = state.get("metadata", {}).get("active_appointment", "Ninguna")
 
-    formatted_prompt = SALES_EXPERT_PROMPT.format(
-        contact_modality=contact_modality,
-        contact_has_land=contact_has_land,
-        contact_location=contact_location,
-        contact_active_appointment=contact_active_appointment
-    )
-
     # Determinar si es el primer mensaje del cliente o conversación en curso
     human_count = sum(1 for m in messages if getattr(m, 'type', '') == 'human' or getattr(m, 'sender_type', '') in ['contact', 'user'])
     is_first_interaction = human_count <= 1
 
     interaction_instruction = (
-        "\n\n[INSTRUCCIÓN DE CONTROL DE CONVERSACIÓN - PRIMER CONTACTO]:\n"
+        "\n[INSTRUCCIÓN DE CONTROL DE CONVERSACIÓN - PRIMER CONTACTO]:\n"
         "⚠️ ESTE ES EL PRIMER MENSAJE QUE EL CLIENTE ENVÍA EN EL CHAT. ES ABSOLUTAMENTE OBLIGATORIO SALUDAR CÁLIDAMENTE Y DAR LA BIENVENIDA A ANCLA SPECIAL PROJECTS ANTES DE RESPONDER O AGENDAR."
         if is_first_interaction else
-        "\n\n[INSTRUCCIÓN DE CONTROL DE CONVERSACIÓN - CONTINUACIÓN DE CHAT]:\n"
+        "\n[INSTRUCCIÓN DE CONTROL DE CONVERSACIÓN - CONTINUACIÓN DE CHAT]:\n"
         "Este mensaje es la continuación de una conversación en curso. NO REPITAS el saludo inicial ni la bienvenida para mantener el diálogo natural."
     )
 
-    # Construir mensaje de sistema con contexto dinámico y fecha actual
-    system_content = (
-        f"{formatted_prompt}\n\n"
-        f"[FECHA Y HORA ACTUAL (COLOMBIA - AMERICA/BOGOTA)]: {current_time_str}\n"
-        f"⚠️ NUNCA OFREZCAS DÍAS NI HORAS ANTERIORES A ESTA FECHA/HORA.\n\n"
-        f"[CONTEXTO DE SESIÓN]\n- Teléfono cliente: {phone}\n- Nombre cliente: {user_name if user_name else 'No especificado aún'}"
+    # 1. PREFIJO ESTÁTICO (Invariable, cacheado automáticamente al 50% por OpenAI / 90% por Anthropic)
+    static_system_message = SystemMessage(content=SALES_EXPERT_PROMPT)
+
+    # 2. SUFIJO DINÁMICO (Datos específicos del cliente actual y hora)
+    dynamic_context_str = (
+        f"[ESTADO RELACIONAL DEL CONTACTO EN POSTGRESQL]:\n"
+        f"- Teléfono: {phone}\n"
+        f"- Nombre cliente: {user_name if user_name else 'No especificado aún'}\n"
+        f"- Modalidad elegida en BD: {contact_modality}\n"
+        f"- ¿Posee lote propio?: {contact_has_land}\n"
+        f"- Ubicación / Ciudad: {contact_location}\n"
+        f"- Cita actualmente agendada: {contact_active_appointment}\n"
+        f"- Fecha y Hora Actual (Colombia - America/Bogota): {current_time_str}\n"
+        f"⚠️ NUNCA OFREZCAS DÍAS NI HORAS ANTERIORES A ESTA FECHA/HORA.\n"
         f"{lead_context_str}"
         f"{interaction_instruction}"
     )
+    dynamic_system_message = SystemMessage(content=dynamic_context_str)
+
     # Sanitización de historial para eliminar plantillas antiguas redundantes y mensajes duplicados
     try:
         from app.services.history_sanitizer import sanitize_chat_history_for_llm
@@ -83,18 +86,21 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
     except Exception:
         sanitized_history = messages
 
-    prompt_messages = [SystemMessage(content=system_content)] + sanitized_history
+    # Ventana Deslizante de Memoria Inteligente (últimos 10 a 12 mensajes)
+    if len(sanitized_history) > 12:
+        sanitized_history = sanitized_history[-12:]
 
-    
+    prompt_messages = [static_system_message, dynamic_system_message] + sanitized_history
+
     api_key = ai_settings.OPENROUTER_API_KEY.strip()
     
-    # Inicializar Claude 3.5 Sonnet vía OpenRouter con binding de herramientas
+    # Inicializar LLM vía OpenRouter con límite de tokens optimizado
     llm = ChatOpenAI(
         model=ai_settings.SALES_EXPERT_MODEL,
         openai_api_key=api_key,
         openai_api_base=ai_settings.OPENROUTER_BASE_URL,
         temperature=0.4,
-        max_tokens=1000,
+        max_tokens=350,
         default_headers={
             "HTTP-Referer": ai_settings.HTTP_REFERER,
             "X-Title": ai_settings.SITE_NAME,

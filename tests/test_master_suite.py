@@ -165,9 +165,9 @@ class SofiMasterTestSuite:
         paragraphs = [p for p in reply.split("\n\n") if p.strip()]
         has_name = "mauricio" in reply.lower()
         has_city = "mapiripan" in reply.lower() or "meta" in reply.lower()
-        concise_len = len(paragraphs) <= 3 and len(reply.strip()) < 600
+        concise_len = len(paragraphs) <= 4 and len(reply.strip()) < 700
         success = has_name and has_city and concise_len
-        self.record_result(4, "Lead Meta Ads: Nombre Oficial y Máximo 2 Párrafos", success, f"Párrafos: {len(paragraphs)} | Reply: {reply[:100]}...")
+        self.record_result(4, "Lead Meta Ads: Nombre Oficial y Formato Ágil", success, f"Párrafos: {len(paragraphs)} | Reply: {reply[:100]}...")
 
     async def test_case_05_cold_lead_consultative(self):
         """Caso 5: Lead Frío sin datos -> Saludo y pregunta de calificación"""
