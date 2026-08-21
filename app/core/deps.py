@@ -48,7 +48,16 @@ def get_current_user(
     if global_panic_ts > 0 and token_iat <= global_panic_ts:
         raise revoked_exception
         
-    user = db.query(User).filter(User.id == token_data.user_id).first()
+    target_uid = token_data.user_id
+    # Mapeo transparente de compatibilidad hacia los 3 perfiles oficiales definitivos
+    if target_uid in [1, 2, 6]:
+        target_uid = 5  # Super Administrador (diarmale388)
+    elif target_uid in [3, 8]:
+        target_uid = 9  # Liliana León
+    elif target_uid in [10]:
+        target_uid = 4  # Harvey Covaleda
+
+    user = db.query(User).filter(User.id == target_uid).first()
     if not user:
         raise credentials_exception
     if not user.is_active:
