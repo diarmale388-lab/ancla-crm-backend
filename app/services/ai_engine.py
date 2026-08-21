@@ -152,9 +152,9 @@ class AIEngine:
             all_state_msgs = final_state.get("messages", [])
             new_msgs = all_state_msgs[initial_msg_count:] if len(all_state_msgs) > initial_msg_count else all_state_msgs[-1:]
 
-            # Tomar el mensaje definitivo final generado por la IA tras invocar las herramientas
-            final_ai_msg = None
-            for msg in reversed(new_msgs):
+            # Extraer y combinar de forma limpia los mensajes generados por la IA
+            ai_parts = []
+            for msg in new_msgs:
                 if getattr(msg, "type", "") == "ai" or isinstance(msg, AIMessage):
                     content_val = getattr(msg, "content", "")
                     if isinstance(content_val, list):
@@ -164,21 +164,27 @@ class AIEngine:
                         content_str = str(content_val or "").strip()
                     
                     if content_str and content_str.lower() != "none":
-                        final_ai_msg = content_str
-                        break
+                        # Limpiar residuos de herramientas internas ("voy a consultar...", etc.)
+                        clean_lines = [
+                            l for l in content_str.split("\n")
+                            if not any(l.strip().lower().startswith(prefix) for prefix in [
+                                "voy a consultar", "permíteme consultar", "voy a revisar",
+                                "voy a proceder", "un momento, por favor", "un momento por favor"
+                            ])
+                        ]
+                        cleaned_chunk = "\n".join(clean_lines).strip()
+                        if cleaned_chunk:
+                            ai_parts.append(cleaned_chunk)
+
+            final_ai_msg = None
+            if ai_parts:
+                if len(ai_parts) > 1 and not ai_parts[-1].startswith("¡Hola") and not ai_parts[-1].startswith("Hola"):
+                    final_ai_msg = "\n\n".join(ai_parts)
+                else:
+                    final_ai_msg = ai_parts[-1]
 
             if final_ai_msg:
-                # Limpiar cualquier residuo de pensamientos internos de herramientas
-                clean_lines = [
-                    l for l in final_ai_msg.split("\n")
-                    if not (l.strip().lower().startswith("voy a consultar") or 
-                            l.strip().lower().startswith("permíteme consultar") or 
-                            l.strip().lower().startswith("voy a revisar") or
-                            l.strip().lower().startswith("voy a proceder") or
-                            l.strip().lower().startswith("un momento, por favor") or
-                            l.strip().lower().startswith("un momento por favor"))
-                ]
-                full_reply = "\n".join(clean_lines).strip()
+                full_reply = final_ai_msg.strip()
                 try:
                     safe_log = full_reply[:140].encode('ascii', errors='replace').decode('ascii')
                     print(f"[AI_ENGINE] Respuesta generada exitosamente por el Agente: '{safe_log}...'")
