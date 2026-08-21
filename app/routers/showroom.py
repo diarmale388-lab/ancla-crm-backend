@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.base import Contact, Appointment, User
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_admin
 
 logger = logging.getLogger("showroom_router")
 router = APIRouter()
@@ -1078,7 +1078,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 @router.get("/dashboard-showroom-2026", response_class=HTMLResponse)
 def get_showroom_dashboard(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     results = db.query(Appointment, Contact).join(
         Contact, Appointment.contact_id == Contact.id
@@ -1169,7 +1169,7 @@ def get_showroom_dashboard(
 @router.get("/showroom-citas-json")
 def get_showroom_citas_json(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     from app.models.base import Message, SenderType, LeadActivityLog
 

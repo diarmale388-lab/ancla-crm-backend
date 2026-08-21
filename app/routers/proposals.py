@@ -52,6 +52,11 @@ def generate_proposal_pdf(
     if not contact:
         raise HTTPException(status_code=404, detail="Contacto no encontrado")
 
+    role_str = str(getattr(current_user.role, "value", current_user.role)).lower()
+    is_admin = role_str in ["admin", "userrole.admin"]
+    if not is_admin and contact.assigned_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Acceso denegado: No tienes autorización sobre este prospecto.")
+
     # Cálculos financieros
     subtotal = payload.base_price + (payload.deck_cost if payload.extra_deck else 0) + (payload.solar_cost if payload.extra_solar else 0) + (payload.clima_cost if payload.extra_clima else 0) + payload.freight_cost
     discount_amount = subtotal * (payload.discount_pct / 100.0)

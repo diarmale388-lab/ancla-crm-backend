@@ -138,6 +138,13 @@ def update_lead_details(
     if not contact:
         raise HTTPException(status_code=404, detail="Contacto no encontrado")
 
+    role_str = str(getattr(current_user.role, "value", current_user.role)).lower()
+    is_admin = role_str in ["admin", "userrole.admin"]
+
+    # Validación de acceso al lead
+    if not is_admin and contact.assigned_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Acceso denegado: No tienes autorización sobre este prospecto.")
+
     if payload.first_name is not None: contact.first_name = payload.first_name
     if payload.last_name is not None: contact.last_name = payload.last_name
     if payload.email is not None: contact.email = payload.email
@@ -145,7 +152,13 @@ def update_lead_details(
     if payload.lot_status is not None: contact.lot_status = payload.lot_status
     if payload.lot_city is not None: contact.lot_city = payload.lot_city
     if payload.estimated_budget is not None: contact.estimated_budget = payload.estimated_budget
-    if payload.assigned_user_id is not None: contact.assigned_user_id = payload.assigned_user_id
+
+    # Reasignación de asesor (Exclusivo Administrador)
+    if payload.assigned_user_id is not None:
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Solo los administradores y Liliana León pueden asignar prospectos.")
+        new_assigned_id = payload.assigned_user_id if payload.assigned_user_id > 0 else None
+        contact.assigned_user_id = new_assigned_id
 
     db.add(contact)
     db.commit()
