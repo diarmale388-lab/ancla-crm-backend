@@ -512,9 +512,22 @@ async def save_appointment(
                 Appointment.status.in_(["CONFIRMED", "PENDING"])
             ).delete()
 
+            # 🛡️ Asignar cita exclusivamente a la bandeja de Administración / Liliana León
+            target_user_id = None
+            if contact.assigned_user_id:
+                target_user_id = contact.assigned_user_id
+            else:
+                admin_user = db.query(User).filter(
+                    User.role == UserRole.ADMIN,
+                    (User.email.ilike("%liliana%") | User.full_name.ilike("%liliana%") | User.email.ilike("%diarmale%"))
+                ).order_by(User.id.asc()).first()
+                if not admin_user:
+                    admin_user = db.query(User).filter(User.role == UserRole.ADMIN).first()
+                target_user_id = admin_user.id if admin_user else 1
+
             new_appt = Appointment(
                 contact_id=contact.id,
-                user_id=1,
+                user_id=target_user_id,
                 datetime=appt_datetime,
                 status="CONFIRMED",
                 appointment_type=target_modality,

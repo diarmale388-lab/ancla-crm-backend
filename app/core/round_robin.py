@@ -80,15 +80,22 @@ def get_next_asesor_for_assignment(db: Session) -> User:
 
 def assign_lead_round_robin(db: Session, contact: Contact) -> Contact:
     """
-    Asigna un lead (Contact) al siguiente asesor disponible usando Round Robin
-    y actualiza la fecha de asignación del asesor.
+    Asigna un lead (Contact) por defecto a la bandeja principal de Administración / Liliana León.
+    Solo un Administrador o Liliana pueden delegar manualmente a un asesor comercial.
     """
-    asesor = get_next_asesor_for_assignment(db)
-    if asesor:
-        contact.assigned_user_id = asesor.id
-        asesor.last_assigned_at = datetime.utcnow()
+    admin_user = db.query(User).filter(
+        User.role == UserRole.ADMIN,
+        (User.email.ilike("%liliana%") | User.full_name.ilike("%liliana%") | User.email.ilike("%diarmale%"))
+    ).order_by(User.id.asc()).first()
+    
+    if not admin_user:
+        admin_user = db.query(User).filter(User.role == UserRole.ADMIN).order_by(User.id.asc()).first()
+        
+    if admin_user:
+        contact.assigned_user_id = admin_user.id
+        admin_user.last_assigned_at = datetime.utcnow()
         db.add(contact)
-        db.add(asesor)
+        db.add(admin_user)
         db.commit()
         db.refresh(contact)
     return contact
