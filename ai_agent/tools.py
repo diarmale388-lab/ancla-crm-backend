@@ -287,7 +287,7 @@ async def consultar_disponibilidad(
             else: # Fallback Lunes a Viernes
                 candidate_slots = ["09:30 AM", "10:30 AM", "11:30 AM", "02:30 PM", "03:30 PM", "04:30 PM"] if is_presencial else ["10:00 AM", "11:00 AM", "02:00 PM", "03:00 PM", "04:00 PM"]
                 
-            cutoff_time = (now_bogota + dt_tz.timedelta(hours=2)).time() if check_date == now_bogota.date() else None
+            cutoff_dt = now_bogota.replace(tzinfo=None) + dt_tz.timedelta(hours=2)
             
             # Consultar citas existentes para check_date
             day_slot_counts = Counter()
@@ -315,7 +315,8 @@ async def consultar_disponibilidad(
             day_slots = []
             for s in candidate_slots:
                 slot_dt = dt_tz.datetime.strptime(f"{check_date} {s}", "%Y-%m-%d %I:%M %p")
-                if check_date == now_bogota.date() and cutoff_time and slot_dt.time() <= cutoff_time:
+                # Filtro estricto: descartar franjas pasadas o dentro de la ventana de corte de 2 horas
+                if slot_dt <= cutoff_dt:
                     continue
                 if day_slot_counts[s] < max_capacity:
                     day_slots.append(f"{s} ({check_date.strftime('%Y-%m-%d')})")
