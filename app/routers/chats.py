@@ -310,6 +310,61 @@ async def send_message_to_contact(
 
 
 
+from fastapi.responses import Response
+
+@router.get("/media/{media_id}")
+async def get_chat_media(
+    media_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Entrega archivos multimedia (imágenes, audios, documentos) guardados en Google Drive o local.
+    """
+    import os
+    # 1. Si está en Google Drive
+    if media_id.startswith("gdrive_") or len(media_id) > 25:
+        drive_id = media_id.replace("gdrive_", "")
+        try:
+            from app.services.google_integration import download_file_from_google_drive
+            res = await download_file_from_google_drive(drive_id)
+            if res:
+                file_bytes, mime_type = res
+                return Response(content=file_bytes, media_type=mime_type)
+        except Exception as drive_err:
+            logger.error(f"Error descargando media de Google Drive ({drive_id}): {drive_err}")
+
+    # 2. Si está en el almacenamiento local
+    local_path = os.path.join("uploads", "media", media_id)
+    if os.path.exists(local_path):
+        import mimetypes
+        mime_type, _ = mimetypes.guess_type(local_path)
+        with open(local_path, "rb") as f:
+            return Response(content=f.read(), media_type=mime_type or "application/octet-stream")
+
+    # 3. Si es un media_id de Meta WhatsApp directo
+    try:
+        from app.services.whatsapp import whatsapp_service
+        import httpx
+        access_token, _ = whatsapp_service.get_credentials(db)
+        if access_token:
+            meta_url = f"https://graph.facebook.com/v18.0/{media_id}"
+            headers = {"Authorization": f"Bearer {access_token}"}
+            async with httpx.AsyncClient() as client:
+                m_res = await client.get(meta_url, headers=headers, timeout=10.0)
+                if m_res.status_code == 200:
+                    media_info = m_res.json()
+                    dl_url = media_info.get("url")
+                    mime_type = media_info.get("mime_type", "image/jpeg")
+                    if dl_url:
+                        dl_res = await client.get(dl_url, headers=headers, timeout=30.0)
+                        if dl_res.status_code == 200:
+                            return Response(content=dl_res.content, media_type=mime_type)
+    except Exception as e:
+        logger.error(f"Error recuperando media de Meta: {e}")
+
+    raise HTTPException(status_code=404, detail="Archivo multimedia no encontrado")
+
+
 @router.post("/{contact_id}/send-media")
 async def send_media_to_contact_media(
     contact_id: int,
