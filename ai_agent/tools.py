@@ -418,115 +418,111 @@ async def save_appointment(
     """
     try:
         from app.database import SessionLocal
-        from app.models.base import Contact, Appointment
+        from app.models.base import Contact, Appointment, User, UserRole
         import datetime as dt_save
         
         db = SessionLocal()
-        contact = db.query(Contact).filter(
-            (Contact.phone == phone) | (Contact.phone == f"+{phone}") | (Contact.phone.like(f"%{phone[-10:]}%"))
-        ).first()
-        
-        if not contact:
-            words = user_name.strip().split() if user_name else ["Cliente"]
-            fn = words[0].capitalize()[:100]
-            ln = (" ".join([w.capitalize() for w in words[1:]]))[:100] if len(words) > 1 else ""
-            contact = Contact(first_name=fn, last_name=ln, email=email, phone=phone, chatbot_enabled=True)
-            db.add(contact)
-            db.commit()
-            db.refresh(contact)
-        else:
-            # Actualizar nombre y correo real en la Ficha Técnica del CRM
-            if user_name and user_name.lower() not in ["cliente", "lead", "hola"] and not any(c.isdigit() for c in user_name):
-                words = user_name.strip().split()
-                contact.first_name = words[0].capitalize()[:100]
-                if len(words) > 1:
-                    contact.last_name = (" ".join([w.capitalize() for w in words[1:]]))[:100]
-            if email and "@" in email:
-                contact.email = email.strip().lower()[:255]
-            db.add(contact)
-            db.commit()
+        try:
+            contact = db.query(Contact).filter(
+                (Contact.phone == phone) | (Contact.phone == f"+{phone}") | (Contact.phone.like(f"%{phone[-10:]}%"))
+            ).first()
             
-        target_modality = "VIRTUAL" if "VIRTUAL" in modality.upper() or "LLAMADA" in modality.upper() or "MEET" in modality.upper() else "PRESENCIAL"
-        contact.scheduling_state = target_modality
-        db.add(contact)
-        db.commit()
-
-        # Generar datetime objeto
-        try:
-            full_dt_str = f"{date} {time}"
-            appt_datetime = dt_save.datetime.strptime(full_dt_str, "%Y-%m-%d %I:%M %p")
-        except Exception:
-            appt_datetime = dt_save.datetime.utcnow() + dt_save.timedelta(days=1)
-
-        # 🔍 PROTECCIÓN ANTI-DUPLICADOS Y SOPORTE DE CAMBIO DE MODALIDAD:
-        # Validar si el contacto ya tiene cita confirmada en el mismo día calendario
-        start_of_day = appt_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_of_day = appt_datetime.replace(hour=23, minute=59, second=59, microsecond=999999)
-
-        existing_same_day = db.query(Appointment).filter(
-            Appointment.contact_id == contact.id,
-            Appointment.datetime >= start_of_day,
-            Appointment.datetime <= end_of_day,
-            Appointment.status.in_(["CONFIRMED", "PENDING"])
-        ).first()
-
-        if existing_same_day:
-            # Si el cliente está cambiando de modalidad (ej: Presencial -> Virtual) o de hora en el mismo día:
-            if existing_same_day.appointment_type != target_modality or existing_same_day.datetime != appt_datetime:
-                existing_same_day.appointment_type = target_modality
-                existing_same_day.datetime = appt_datetime
-                existing_same_day.notes = f"Cita actualizada a {target_modality} por Sofi AI para {user_name}"
-                db.add(existing_same_day)
+            if not contact:
+                words = user_name.strip().split() if user_name else ["Cliente"]
+                fn = words[0].capitalize()[:100]
+                ln = (" ".join([w.capitalize() for w in words[1:]]))[:100] if len(words) > 1 else ""
+                contact = Contact(first_name=fn, last_name=ln, email=email, phone=phone, chatbot_enabled=True)
+                db.add(contact)
                 db.commit()
-                saved_id = str(existing_same_day.id)
-                db.close()
-                return {
-                    "status": "success",
-                    "success": True,
-                    "appointment_id": saved_id,
-                    "datetime": appt_datetime.isoformat(),
-                    "phone": phone,
-                    "user_name": user_name,
-                    "modality": target_modality,
-                    "message": f"Cita actualizada exitosamente a modalidad {target_modality} para el {date} a las {time}."
-                }
+                db.refresh(contact)
             else:
-                saved_id = str(existing_same_day.id)
-                db.close()
-                return {
-                    "status": "already_booked",
-                    "success": True,
-                    "already_booked": True,
-                    "appointment_id": saved_id,
-                    "datetime": appt_datetime.isoformat(),
-                    "phone": phone,
-                    "user_name": user_name,
-                    "modality": modality,
-                    "message": "⚠️ ATENCIÓN: La cita de este cliente YA estaba registrada previamente en la agenda para esta misma fecha y modalidad. PROHIBIDO ENVIAR UN SEGUNDO MENSAJE DE CONFIRMACIÓN AL CLIENTE."
-                }
+                # Actualizar nombre y correo real en la Ficha Técnica del CRM
+                if user_name and user_name.lower() not in ["cliente", "lead", "hola"] and not any(c.isdigit() for c in user_name):
+                    words = user_name.strip().split()
+                    contact.first_name = words[0].capitalize()[:100]
+                    if len(words) > 1:
+                        contact.last_name = (" ".join([w.capitalize() for w in words[1:]]))[:100]
+                if email and "@" in email:
+                    contact.email = email.strip().lower()[:255]
+                db.add(contact)
+                db.commit()
+                
+            target_modality = "VIRTUAL" if "VIRTUAL" in modality.upper() or "LLAMADA" in modality.upper() or "MEET" in modality.upper() else "PRESENCIAL"
+            contact.scheduling_state = target_modality
+            contact_id = contact.id
+            assigned_uid = contact.assigned_user_id
+            db.add(contact)
+            db.commit()
 
-        try:
-            # 🔄 Si el cliente tenía una cita anterior en otra fecha (reagendamiento / cambio de fecha), liberar la anterior
-            db.query(Appointment).filter(
-                Appointment.contact_id == contact.id,
+            # Generar datetime objeto
+            try:
+                full_dt_str = f"{date} {time}"
+                appt_datetime = dt_save.datetime.strptime(full_dt_str, "%Y-%m-%d %I:%M %p")
+            except Exception:
+                appt_datetime = dt_save.datetime.utcnow() + dt_save.timedelta(days=1)
+
+            # 🔍 PROTECCIÓN ANTI-DUPLICADOS Y SOPORTE DE CAMBIO DE MODALIDAD:
+            start_of_day = appt_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_of_day = appt_datetime.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+            existing_same_day = db.query(Appointment).filter(
+                Appointment.contact_id == contact_id,
+                Appointment.datetime >= start_of_day,
+                Appointment.datetime <= end_of_day,
                 Appointment.status.in_(["CONFIRMED", "PENDING"])
-            ).delete()
+            ).first()
 
-            # 🛡️ Asignar cita exclusivamente a la bandeja de Administración / Liliana León
-            target_user_id = None
-            if contact.assigned_user_id:
-                target_user_id = contact.assigned_user_id
-            else:
+            if existing_same_day:
+                if existing_same_day.appointment_type != target_modality or existing_same_day.datetime != appt_datetime:
+                    existing_same_day.appointment_type = target_modality
+                    existing_same_day.datetime = appt_datetime
+                    existing_same_day.notes = f"Cita actualizada a {target_modality} por Sofi AI para {user_name}"
+                    db.add(existing_same_day)
+                    db.commit()
+                    saved_id = str(existing_same_day.id)
+                    return {
+                        "status": "success",
+                        "success": True,
+                        "appointment_id": saved_id,
+                        "datetime": appt_datetime.isoformat(),
+                        "phone": phone,
+                        "user_name": user_name,
+                        "modality": target_modality,
+                        "message": f"Cita actualizada exitosamente a modalidad {target_modality} para el {date} a las {time}."
+                    }
+                else:
+                    saved_id = str(existing_same_day.id)
+                    return {
+                        "status": "already_booked",
+                        "success": True,
+                        "already_booked": True,
+                        "appointment_id": saved_id,
+                        "datetime": appt_datetime.isoformat(),
+                        "phone": phone,
+                        "user_name": user_name,
+                        "modality": modality,
+                        "message": "⚠️ ATENCIÓN: La cita de este cliente YA estaba registrada previamente en la agenda para esta misma fecha y modalidad. PROHIBIDO ENVIAR UN SEGUNDO MENSAJE DE CONFIRMACIÓN AL CLIENTE."
+                    }
+
+            # 🔄 Si el cliente tenía una cita anterior en otra fecha, liberar la anterior
+            db.query(Appointment).filter(
+                Appointment.contact_id == contact_id,
+                Appointment.status.in_(["CONFIRMED", "PENDING"])
+            ).delete(synchronize_session=False)
+
+            # 🛡️ Asignar cita a Administrador / Liliana León si no tiene asesor
+            target_user_id = assigned_uid
+            if not target_user_id:
                 admin_user = db.query(User).filter(
-                    User.role == UserRole.ADMIN,
+                    User.is_active == True,
                     (User.email.ilike("%liliana%") | User.full_name.ilike("%liliana%") | User.email.ilike("%diarmale%"))
                 ).order_by(User.id.asc()).first()
                 if not admin_user:
-                    admin_user = db.query(User).filter(User.role == UserRole.ADMIN).first()
-                target_user_id = admin_user.id if admin_user else 1
+                    admin_user = db.query(User).filter(User.is_active == True).first()
+                target_user_id = admin_user.id if admin_user else 5
 
             new_appt = Appointment(
-                contact_id=contact.id,
+                contact_id=contact_id,
                 user_id=target_user_id,
                 datetime=appt_datetime,
                 status="CONFIRMED",
@@ -536,7 +532,6 @@ async def save_appointment(
             db.add(new_appt)
             db.commit()
             db.refresh(new_appt)
-            db.close()
             return {
                 "status": "success",
                 "success": True,
@@ -547,26 +542,8 @@ async def save_appointment(
                 "modality": target_modality,
                 "message": f"Cita {target_modality} agendada exitosamente en BD para el {date} a las {time}."
             }
-        except Exception as db_err:
-            db.rollback()
+        finally:
             db.close()
-            # Si PostgreSQL Unique Index rebotó la inserción duplicada concurrente:
-            existing_after_err = SessionLocal().query(Appointment).filter(
-                Appointment.contact_id == contact.id,
-                Appointment.datetime >= start_of_day,
-                Appointment.datetime <= end_of_day,
-                Appointment.status.in_(["CONFIRMED", "PENDING"])
-            ).first()
-            if existing_after_err:
-                return {
-                    "status": "already_booked",
-                    "success": True,
-                    "already_booked": True,
-                    "appointment_id": str(existing_after_err.id),
-                    "datetime": existing_after_err.datetime.isoformat(),
-                    "message": "⚠️ ATENCIÓN: Inserción duplicada rebotada por PostgreSQL. La cita ya existía previamente. PROHIBIDO ENVIAR SEGUNDA CONFIRMACIÓN."
-                }
-            raise db_err
     except Exception as e:
         return {
             "status": "error",
