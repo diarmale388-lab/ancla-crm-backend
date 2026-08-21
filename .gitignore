@@ -16,8 +16,9 @@ env/
 .env
 
 # Database local
-# *.db
-# *.sqlite3
+*.db
+*.sqlite3
+*.zip
 
 # IDE
 .idea/
