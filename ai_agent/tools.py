@@ -231,27 +231,19 @@ async def consultar_disponibilidad(
                 if sd_sett and sd_sett.value and sd_sett.value.isdigit():
                     slot_duration_min = int(sd_sett.value)
 
-                # Consultar bloques específicos de la modalidad (priorizar admin/user 1)
-                user_avail_blocks = db_av.query(Availability).filter(
+                # Consultar bloques específicos de la modalidad (deduplicando dinámicamente por horario)
+                all_blocks = db_av.query(Availability).filter(
                     Availability.day_of_week == weekday,
-                    Availability.modality == target_modality,
-                    Availability.user_id == 1
+                    Availability.modality == target_modality
                 ).order_by(Availability.start_time).all()
-
-                if not user_avail_blocks:
-                    # Fallback si no está para user_id 1
-                    all_blocks = db_av.query(Availability).filter(
-                        Availability.day_of_week == weekday,
-                        Availability.modality == target_modality
-                    ).order_by(Availability.start_time).all()
-                    
-                    seen_times = set()
-                    user_avail_blocks = []
-                    for b in all_blocks:
-                        pair = (str(b.start_time)[:5], str(b.end_time)[:5])
-                        if pair not in seen_times:
-                            seen_times.add(pair)
-                            user_avail_blocks.append(b)
+                
+                seen_times = set()
+                user_avail_blocks = []
+                for b in all_blocks:
+                    pair = (str(b.start_time)[:5], str(b.end_time)[:5])
+                    if pair not in seen_times:
+                        seen_times.add(pair)
+                        user_avail_blocks.append(b)
 
                 db_av.close()
             except Exception as e_av:
