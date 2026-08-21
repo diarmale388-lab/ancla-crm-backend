@@ -525,6 +525,18 @@ async def save_appointment(
             db.add(new_appt)
             db.commit()
             db.refresh(new_appt)
+
+            # Generar sala de Google Meet si es Virtual
+            meet_url = "https://meet.google.com/niv-fvrr-ryh"
+            if target_modality == "VIRTUAL":
+                try:
+                    from app.services.google_integration import create_google_calendar_event
+                    _, generated_meet = await create_google_calendar_event(db, new_appt, contact)
+                    if generated_meet:
+                        meet_url = generated_meet
+                except Exception as g_err:
+                    print("Error generando Google Meet dinámico:", g_err)
+
             return {
                 "status": "success",
                 "success": True,
@@ -533,6 +545,7 @@ async def save_appointment(
                 "phone": phone,
                 "user_name": user_name,
                 "modality": target_modality,
+                "google_meet_url": meet_url,
                 "message": f"Cita {target_modality} agendada exitosamente en BD para el {date} a las {time}."
             }
         finally:

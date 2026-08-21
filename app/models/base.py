@@ -255,6 +255,13 @@ class Appointment(Base):
     appointment_type: Mapped[Optional[str]] = mapped_column(String(50), default="VIRTUAL", nullable=True) # PRESENCIAL, VIRTUAL, LLAMADA
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # Integración Google Meet & Recordatorios Anti-No-Show
+    google_event_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    google_meet_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    reminder_24h_sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    reminder_2h_sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    reminder_15m_sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     created_at: Mapped[dt_module.datetime] = mapped_column(DateTime, default=dt_module.datetime.utcnow, nullable=False)
 
     # Relaciones

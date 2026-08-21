@@ -43,6 +43,13 @@ async def lifespan(app: FastAPI):
     except Exception as e_sla:
         print(f"Advertencia iniciando monitor SLA: {e_sla}")
 
+    # Iniciar Background Worker de Recordatorios Automáticos Anti-No-Show (24h, 2h, 15m)
+    try:
+        from app.services.reminder_service import appointment_reminder_loop
+        asyncio.create_task(appointment_reminder_loop())
+    except Exception as e_reminder:
+        print(f"Advertencia iniciando loop de recordatorios: {e_reminder}")
+
     await redis_bridge.start()
     yield
     await redis_bridge.stop()

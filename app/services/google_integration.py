@@ -132,12 +132,13 @@ def _get_advisor_credentials(db: Session, user_id: int) -> Credentials:
     return creds
 
 
-async def create_google_calendar_event(db: Session, appointment: Appointment, contact: Contact):
+async def create_google_calendar_event(db: Session, appointment: Appointment, contact: Contact) -> tuple[Optional[str], Optional[str]]:
     """
-    Crea un evento de Google Calendar real utilizando el token OAuth del asesor asignado.
-    Si no está conectado a OAuth, recurre al credentials.json de cuenta de servicio.
-    Si falla, simula la creación en local.
+    Crea un evento de Google Calendar real con enlace dinámico de Google Meet.
+    Si Liliana compartió su calendario o si se usa Service Account, genera sala única.
+    Retorna (event_id, google_meet_url).
     """
+    import uuid
     # 1. Determinar el usuario asignado
     user_id = appointment.user_id or (contact.assigned_user_id if contact else None)
     
@@ -154,9 +155,26 @@ async def create_google_calendar_event(db: Session, appointment: Appointment, co
     start_time = appointment.datetime.isoformat()
     end_time = (appointment.datetime + type(appointment.datetime - appointment.datetime)(hours=1)).isoformat()
     
+    request_id = f"meet_{appointment.id}_{uuid.uuid4().hex[:8]}"
+    
+    attendees_list = []
+    if contact.email and "@" in contact.email:
+        attendees_list.append({"email": contact.email})
+    
+    # Agregar correo de Liliana si está configurado
+    liliana_email = os.getenv("LILIANA_CALENDAR_EMAIL", "anclagerenciacomercial@gmail.com")
+    if liliana_email:
+        attendees_list.append({"email": liliana_email})
+    
     event_body = {
-        "summary": f"Llamada Comercial: {contact.first_name or ''} {contact.last_name or ''}".strip() or contact.phone,
-        "description": f"Cita de Ventas agendada de forma automatica en el CRM.\nNotas: {appointment.notes or 'Ninguna'}",
+        "summary": f"Asesoría ANCLA: {contact.first_name or ''} {contact.last_name or ''} ({contact.lot_city or 'Vivienda'})".strip(),
+        "description": (
+            f"Asesoría Virtual ANCLA Special Projects.\n"
+            f"Cliente: {contact.first_name or ''} {contact.last_name or ''}\n"
+            f"Teléfono: {contact.phone}\n"
+            f"Municipio: {contact.lot_city or 'Por definir'}\n"
+            f"Notas: {appointment.notes or 'Ninguna'}"
+        ),
         "start": {
             "dateTime": start_time,
             "timeZone": "America/Bogota"
@@ -165,42 +183,70 @@ async def create_google_calendar_event(db: Session, appointment: Appointment, co
             "dateTime": end_time,
             "timeZone": "America/Bogota"
         },
-        "attendees": [
-            {"email": contact.email or "sin-email@crm.com"},
-            {"email": "asesor-crm@antigravity.com"}
-        ],
+        "attendees": attendees_list,
+        "conferenceData": {
+            "createRequest": {
+                "requestId": request_id,
+                "conferenceSolutionKey": {
+                    "type": "hangoutsMeet"
+                }
+            }
+        },
         "reminders": {
             "useDefault": True
         }
     }
 
+    meet_url = None
+    event_id = None
+
     if creds:
         try:
-            # Inicializar cliente oficial de Google Calendar API
             service = build('calendar', 'v3', credentials=creds)
-            event = service.events().insert(calendarId='primary', body=event_body, sendUpdates='all').execute()
+            # Intentar crear en el calendario de Liliana si está compartido, o 'primary'
+            calendar_id = os.getenv("LILIANA_CALENDAR_ID", "primary")
+            event = service.events().insert(
+                calendarId=calendar_id,
+                body=event_body,
+                conferenceDataVersion=1,
+                sendUpdates='all'
+            ).execute()
             
             event_id = event.get('id')
-            logger.info(f"Evento real creado en Google Calendar con ID: {event_id}")
-            print(f"[GOOGLE CALENDAR REAL] Cita agendada exitosamente. Evento ID: {event_id}")
-            return event_id
+            meet_url = event.get('hangoutLink')
+            if not meet_url and 'conferenceData' in event:
+                entry_points = event['conferenceData'].get('entryPoints', [])
+                for ep in entry_points:
+                    if ep.get('entryPointType') == 'video':
+                        meet_url = ep.get('uri')
+                        break
+            
+            logger.info(f"Evento real creado en Google Calendar con ID: {event_id} | Meet: {meet_url}")
+            print(f"[GOOGLE CALENDAR REAL] Cita agendada exitosamente. Evento ID: {event_id} | Meet: {meet_url}")
         except Exception as e:
-            logger.error(f"Fallo en llamada a API real de Google Calendar, recurriendo a simulación local: {e}")
-            # Fallback en caso de error de red o permisos
-    
-    # Fallback / Simulación local
-    event_id = f"gcal_event_{appointment.id}_{int(datetime.utcnow().timestamp())}"
-    event_body["event_id"] = event_id
-    event_body["created_at"] = datetime.utcnow().isoformat()
-    event_body["status"] = "simulated"
+            logger.error(f"Fallo en llamada a API real de Google Calendar, recurriendo a fallback: {e}")
 
-    file_path = os.path.join(CALENDAR_SIM_DIR, f"{event_id}.json")
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(event_body, f, indent=4, ensure_ascii=False)
+    # Fallback seguro si no se obtuvo Meet dinámico
+    if not meet_url:
+        meet_url = "https://meet.google.com/niv-fvrr-ryh"
 
-    logger.info(f"Evento de Google Calendar simulado (fallback local): {file_path}")
-    print(f"[GOOGLE CALENDAR SIMULADO] Cita guardada en local. ID: {event_id}")
-    return event_id
+    if not event_id:
+        event_id = f"gcal_event_{appointment.id}_{int(datetime.utcnow().timestamp())}"
+        event_body["event_id"] = event_id
+        event_body["created_at"] = datetime.utcnow().isoformat()
+        event_body["status"] = "simulated"
+        event_body["hangoutLink"] = meet_url
+
+        file_path = os.path.join(CALENDAR_SIM_DIR, f"{event_id}.json")
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(event_body, f, indent=4, ensure_ascii=False)
+
+    # Actualizar appointment en base de datos
+    appointment.google_event_id = event_id
+    appointment.google_meet_url = meet_url
+    db.commit()
+
+    return event_id, meet_url
 
 
 async def upload_lead_report_to_google_drive(db: Session, contact: Contact, appointment: Appointment):

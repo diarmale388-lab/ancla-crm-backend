@@ -1,0 +1,162 @@
+import asyncio
+import logging
+from datetime import datetime, timedelta
+import zoneinfo
+from sqlalchemy.orm import Session
+from app.database import SessionLocal
+from app.models.base import Appointment, Contact, Message, SenderType, ChannelType, MessageStatus
+from app.services.whatsapp import whatsapp_service
+
+logger = logging.getLogger("reminder_service")
+BOGOTA_TZ = zoneinfo.ZoneInfo("America/Bogota")
+DEFAULT_VIP_MEET = "https://meet.google.com/niv-fvrr-ryh"
+
+
+def format_time_12h(dt: datetime) -> str:
+    h = dt.hour
+    m = dt.minute
+    am_pm = "AM" if h < 12 else "PM"
+    h_12 = h if 1 <= h <= 12 else (h - 12 if h > 12 else 12)
+    return f"{h_12:02d}:{m:02d} {am_pm}"
+
+
+def format_spanish_date(dt: datetime) -> str:
+    days = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+    months = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+    day_name = days[dt.weekday()]
+    month_name = months[dt.month - 1]
+    return f"{day_name} {dt.day} de {month_name}"
+
+
+async def process_appointment_reminders(db: Session):
+    now_bogota = datetime.now(BOGOTA_TZ).replace(tzinfo=None)
+    upcoming_limit = now_bogota + timedelta(days=2)
+    
+    appointments = db.query(Appointment).filter(
+        Appointment.status.in_(["CONFIRMED", "PENDING"]),
+        Appointment.datetime >= now_bogota - timedelta(minutes=30),
+        Appointment.datetime <= upcoming_limit
+    ).all()
+    
+    for appt in appointments:
+        contact = db.query(Contact).filter(Contact.id == appt.contact_id).first()
+        if not contact or not contact.phone:
+            continue
+            
+        time_to_appt = appt.datetime - now_bogota
+        total_seconds = time_to_appt.total_seconds()
+        
+        name = contact.first_name or "Estimado/a"
+        time_str = format_time_12h(appt.datetime)
+        date_str = format_spanish_date(appt.datetime)
+        location_str = contact.lot_city or "tu municipio"
+        meet_url = appt.google_meet_url or DEFAULT_VIP_MEET
+        is_virtual = (appt.appointment_type or "VIRTUAL").upper() == "VIRTUAL"
+
+        # 1. VENTANA 24 HORAS
+        if 22 * 3600 <= total_seconds <= 26 * 3600 and not appt.reminder_24h_sent:
+            if is_virtual:
+                msg_text = (
+                    f"¡Hola {name}! 👋 Te recordamos que mañana {date_str} a las {time_str} tenemos reservada tu *Asesoría Virtual* para tu proyecto en {location_str} 🏡✨.\n\n"
+                    f"📍 Nuestro equipo te presentará en pantalla los planos de distribución, renders reales y la cotización personalizada puesta en tu lote.\n\n"
+                    f"📲 Tu enlace de Google Meet: {meet_url}\n\n"
+                    f"¡Nos vemos mañana puntualmente!"
+                )
+            else:
+                msg_text = (
+                    f"¡Hola {name}! 👋 Te recordamos que mañana {date_str} a las {time_str} tenemos reservada tu *Visita al Showroom en Armenia* (Avenida Centenario, frente a Pan y Miel) 🏡✨.\n\n"
+                    f"🚗 Contamos con parqueadero privado y gratuito. Enlaces para llegar fácilmente:\n"
+                    f"• Waze: https://waze.com/ul?q=Avenida+Centenario+Armenia+Quindio\n"
+                    f"• Google Maps: https://maps.google.com/?q=4.5616751,-75.6455612\n\n"
+                    f"¡Te esperamos mañana con gusto!"
+                )
+            
+            try:
+                res = await whatsapp_service.send_text_message(contact.phone, msg_text, db=db)
+                if res:
+                    appt.reminder_24h_sent = True
+                    db_msg = Message(
+                        contact_id=contact.id,
+                        sender_type=SenderType.SYSTEM,
+                        channel=ChannelType.WHATSAPP,
+                        content=msg_text,
+                        status=MessageStatus.DELIVERED
+                    )
+                    db.add(db_msg)
+                    db.commit()
+                    logger.info(f"Recordatorio 24h enviado exitosamente a {contact.phone} (Cita {appt.id})")
+            except Exception as err:
+                logger.error(f"Error enviando recordatorio 24h a {contact.phone}: {err}")
+
+        # 2. VENTANA 2 HORAS
+        if 90 * 60 <= total_seconds <= 150 * 60 and not appt.reminder_2h_sent:
+            if is_virtual:
+                msg_text = (
+                    f"¡Hola {name}! ⏰ En 2 horas iniciamos tu *Asesoría Virtual* ({time_str}) para tu proyecto en {location_str} 🏡.\n\n"
+                    f"Puedes conectarte fácilmente desde tu celular o computador aquí:\n"
+                    f"📲 {meet_url}\n\n"
+                    f"¿Nos confirmas si todo en orden para tu conexión? 😊"
+                )
+            else:
+                msg_text = (
+                    f"¡Hola {name}! ⏰ En 2 horas te esperamos en nuestro Showroom de Armenia ({time_str}) 🏡.\n\n"
+                    f"📍 Avenida Centenario, frente a Pan y Miel (Parqueadero privado disponible).\n"
+                    f"🚗 Waze: https://waze.com/ul?q=Avenida+Centenario+Armenia+Quindio\n\n"
+                    f"¡Nos vemos en breve!"
+                )
+            
+            try:
+                res = await whatsapp_service.send_text_message(contact.phone, msg_text, db=db)
+                if res:
+                    appt.reminder_2h_sent = True
+                    db_msg = Message(
+                        contact_id=contact.id,
+                        sender_type=SenderType.SYSTEM,
+                        channel=ChannelType.WHATSAPP,
+                        content=msg_text,
+                        status=MessageStatus.DELIVERED
+                    )
+                    db.add(db_msg)
+                    db.commit()
+                    logger.info(f"Recordatorio 2h enviado exitosamente a {contact.phone} (Cita {appt.id})")
+            except Exception as err:
+                logger.error(f"Error enviando recordatorio 2h a {contact.phone}: {err}")
+
+        # 3. VENTANA 15 MINUTOS
+        if 5 * 60 <= total_seconds <= 20 * 60 and not appt.reminder_15m_sent:
+            if is_virtual:
+                msg_text = (
+                    f"¡Hola {name}! 👋 En 15 minutos nuestro equipo de expertos estará esperándote en la sala virtual:\n"
+                    f"📲 {meet_url}\n\n"
+                    f"¡Nos vemos en breve para revisar los planos de tu casa modular! 🏡"
+                )
+                try:
+                    res = await whatsapp_service.send_text_message(contact.phone, msg_text, db=db)
+                    if res:
+                        appt.reminder_15m_sent = True
+                        db_msg = Message(
+                            contact_id=contact.id,
+                            sender_type=SenderType.SYSTEM,
+                            channel=ChannelType.WHATSAPP,
+                            content=msg_text,
+                            status=MessageStatus.DELIVERED
+                        )
+                        db.add(db_msg)
+                        db.commit()
+                        logger.info(f"Recordatorio 15m enviado exitosamente a {contact.phone} (Cita {appt.id})")
+                except Exception as err:
+                    logger.error(f"Error enviando recordatorio 15m a {contact.phone}: {err}")
+
+
+async def appointment_reminder_loop():
+    logger.info("Iniciando Background Worker de Recordatorios Automáticos Anti-No-Show...")
+    while True:
+        try:
+            db = SessionLocal()
+            try:
+                await process_appointment_reminders(db)
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Excepción en appointment_reminder_loop: {e}")
+        await asyncio.sleep(60)
