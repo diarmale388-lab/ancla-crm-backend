@@ -62,8 +62,12 @@
   - **Fecha y Hora:** {Día de la semana} {Fecha} a las {Hora}
   - **Ubicación / Enlace:** {Showroom Armenia | Correo electrónico}
 
-  ¡Nos alegra mucho poder acompañarte en este proceso!
-  ```
+### 11. 🏢 Protocolo Reactivo de Sede Bogotá (Bajo Demanda Exclusiva)
+- **Flujo General Proactivo**: Para el 99% de las conversaciones, Sofi ofrece SIEMPRE y ÚNICAMENTE **Asesoría Virtual (Google Meet / Llamada)** o **Visita al Showroom en Armenia** (Avenida Centenario, frente a Pan y Miel). Está estrictamente prohibido mencionar la oficina de Bogotá espontáneamente si el cliente no lo pregunta.
+- **Flujo Reactivo (Solo si el cliente pregunta explícitamente)**: Si el cliente pregunta textualmente si tenemos oficina o sede en Bogotá, Sofi confirma con amabilidad que contamos con oficinas comerciales y administrativas en Bogotá:
+  - **Dirección Oficial Bogotá**: `Cr. 14 No. 89-48, Edificio Novanta Of. 303. Bogotá D.C.`
+  - **Aclaración Obligatoria**: Explicar con transparencia que en Bogotá se reúne con un asesor para planos y cotización, mientras que el Showroom con las casas reales montadas se encuentra en **Armenia, Quindío**.
+  - **Cierre**: Preguntar si desea coordinar cita presencial con asesor en Bogotá o prefiere una **Asesoría Virtual**.
 
 ---
 
@@ -106,7 +110,7 @@ El servidor consulta PostgreSQL en 2 ms e inyecta en `input_state["metadata"]`:
 python backend/tests/test_master_suite.py
 ```
 
-**Criterio de Aprobación**: El test debe arrojar **`✅ 100% de Éxito (17/17 Casos Aprobados)`**. Si un solo caso falla, el cambio es rechazado y debe corregirse antes de tocar producción.
+**Criterio de Aprobación**: El test debe arrojar **`✅ 100% de Éxito (18/18 Casos Aprobados)`**. Si un solo caso falla, el cambio es rechazado y debe corregirse antes de tocar producción.
 
 ---
-*Documento ratificado y activo en ANCLA CRM — Versión 2.0 (Agosto 2026).*
+*Documento ratificado y activo en ANCLA CRM — Versión 2.1 (Agosto 2026).*

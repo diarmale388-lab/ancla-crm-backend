@@ -296,13 +296,23 @@ class SofiMasterTestSuite:
         success = is_valid_non_empty
         self.record_result(17, "Anti-Mensajes Vacíos en Blanco", success, f"Len: {len(reply)} | Reply: {reply}")
 
+    async def test_case_18_bogota_office_reactive_inquiry(self):
+        """Caso 18: Consulta reactiva de sede/oficina en Bogotá"""
+        msgs = [HumanMessage(content="¿Ustedes tienen oficina en Bogotá?")]
+        reply = await self.invoke_agent(msgs)
+        has_bogota_address = "novanta" in reply.lower() or "89-48" in reply.lower() or "cr. 14" in reply.lower() or "carrera 14" in reply.lower() or "bogotá" in reply.lower()
+        has_armenia_showroom_clarity = "armenia" in reply.lower() or "showroom" in reply.lower() or "quindío" in reply.lower()
+        has_appointment_offer = "asesor" in reply.lower() or "virtual" in reply.lower() or "cita" in reply.lower()
+        success = has_bogota_address and has_armenia_showroom_clarity and has_appointment_offer
+        self.record_result(18, "Protocolo Reactivo de Sede en Bogotá (Novanta)", success, f"Reply: {reply[:100]}...")
+
     # =========================================================================
     # EJECUTOR PRINCIPAL
     # =========================================================================
 
     async def run_all(self):
         print("\n" + "="*75)
-        print("🏛️ ANCLA CRM — EJECUTANDO SUITE MAESTRA DE CONTROL DE CALIDAD (17 CASOS)")
+        print("🏛️ ANCLA CRM — EJECUTANDO SUITE MAESTRA DE CONTROL DE CALIDAD (18 CASOS)")
         print("="*75 + "\n")
         
         start_time = asyncio.get_event_loop().time()
@@ -325,6 +335,7 @@ class SofiMasterTestSuite:
             self.test_case_15_showroom_logistics_parking_guests(),
             self.test_case_16_anti_truncation_no_prompt_leak(),
             self.test_case_17_anti_empty_message(),
+            self.test_case_18_bogota_office_reactive_inquiry(),
         ]
         
         for idx, t in enumerate(tests):
