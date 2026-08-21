@@ -139,11 +139,12 @@ def get_all_users(
 ) -> Any:
     """
     Recupera la lista de todos los usuarios registrados con su conteo de prospectos asignados.
+    Garantiza deduplicación y retorno exclusivo de perfiles activos reales.
     """
     from app.models.base import Contact
     from sqlalchemy import func
 
-    users = db.query(User).order_by(User.id.asc()).all()
+    users = db.query(User).filter(User.is_active == True).order_by(User.id.asc()).all()
     
     # Subconsulta para contar leads asignados por usuario
     lead_counts = db.query(
@@ -153,7 +154,14 @@ def get_all_users(
     count_map = {row[0]: row[1] for row in lead_counts}
 
     results = []
+    seen_names = set()
     for u in users:
+        # Deduplicación defensiva permanente
+        key = (u.full_name.lower().strip(), str(u.role).lower())
+        if key in seen_names:
+            continue
+        seen_names.add(key)
+
         results.append({
             "id": u.id,
             "email": u.email,
