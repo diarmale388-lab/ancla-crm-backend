@@ -84,13 +84,14 @@ def parse_and_update_contact_from_text(contact: Contact, raw_text: str, db: Sess
         if not val_str:
             continue
 
-        # 1. Nombre Completo
-        if any(w in k_lower for w in ["full name", "full_name", "nombre completo"]):
-            if not contact.first_name or len(contact.first_name) < 3 or contact.first_name.lower() in ["cliente", "lead"]:
-                parts = val_str.split()
-                contact.first_name = (parts[0] if parts else "Cliente")[:100]
-                contact.last_name = (" ".join(parts[1:]) if len(parts) > 1 else "")[:100]
+        # 1. Nombre Completo Oficial desde Formulario Meta Ads
+        if any(w in k_lower for w in ["full name", "full_name", "nombre completo", "nombre"]):
+            parts = val_str.split()
+            if parts:
+                contact.first_name = parts[0][:100]
+                contact.last_name = (" ".join(parts[1:]))[:100] if len(parts) > 1 else ""
                 updated = True
+                logger.info(f"Nombre oficial de Formulario aplicado a Contacto #{contact.id}: {contact.first_name} {contact.last_name}")
 
         # 2. Correo Electrónico
         elif any(w in k_lower for w in ["email", "correo"]):
@@ -100,21 +101,18 @@ def parse_and_update_contact_from_text(contact: Contact, raw_text: str, db: Sess
 
         # 3. Ciudad / Ubicación Lote
         elif any(w in k_lower for w in ["ciudad", "departamento", "construir", "city", "ubicación", "ubicacion", "dónde", "donde"]):
-            if not contact.lot_city or contact.lot_city.lower() in ["armenia", "por definir"]:
-                contact.lot_city = val_str[:100]
-                updated = True
+            contact.lot_city = val_str[:100]
+            updated = True
 
         # 4. Estado del Lote
         elif any(w in k_lower for w in ["terreno", "lote", "propio"]):
-            if not contact.lot_status or contact.lot_status.lower() in ["por definir"]:
-                contact.lot_status = val_str[:100]
-                updated = True
+            contact.lot_status = val_str[:100]
+            updated = True
 
-        # 5. Propósito / Modelo
-        elif any(w in k_lower for w in ["propósito", "proposito", "modelo", "interés", "interes"]):
-            if not contact.interest_product or contact.interest_product.lower() in ["vivienda / campestre"]:
-                contact.interest_product = val_str[:100]
-                updated = True
+        # 5. Propósito / Modelo de Interés
+        elif any(w in k_lower for w in ["propósito", "proposito", "modelo", "interés", "interes", "proyecto"]):
+            contact.interest_product = val_str[:100]
+            updated = True
 
         # 6. Presupuesto / Inversión
         elif any(w in k_lower for w in ["presupuesto", "inversión", "inversion", "rango", "dinero", "valor"]):
@@ -131,17 +129,32 @@ def parse_and_update_contact_from_text(contact: Contact, raw_text: str, db: Sess
             contact.preferred_contact_method = val_str[:100]
             updated = True
 
-    # 8. Diagnóstico de Perfil / Tipo de Cliente (Persona Natural, Empresario, Inversionista)
-    if not contact.client_type or contact.client_type == "Por definir":
-        full_text = (contact.qualification_notes or "") + " " + raw_text
-        full_lower = full_text.lower()
-        if any(w in full_lower for w in ["inversionista", "inversor", "inversión", "inversion", "glamping", "hotelería", "turismo", "renta"]):
+        # 8. Perfil del Cliente (Persona Natural vs Empresa vs Inversionista)
+        elif any(w in k_lower for w in ["persona natural", "empresa", "perfil", "tipo de cliente", "contactas como", "visitas como", "titular"]):
+            v_lower = val_str.lower()
+            if "persona natural" in v_lower or "natural" in v_lower:
+                contact.client_type = "Persona Natural"
+            elif "inversion" in v_lower or "inversionista" in v_lower:
+                contact.client_type = "Inversionista"
+            elif "empresa" in v_lower or "empresario" in v_lower or "corporativo" in v_lower:
+                contact.client_type = "Empresario"
+            else:
+                contact.client_type = val_str[:100]
+            updated = True
+
+    # 9. Fallback inteligente de client_type si aún no está definido
+    if not contact.client_type or contact.client_type in ["Por definir", "None"]:
+        prod_lower = (contact.interest_product or "").lower()
+        if any(w in prod_lower for w in ["glamping", "turismo", "hotelería", "hotel", "renta"]):
             contact.client_type = "Inversionista"
             updated = True
-        elif any(w in full_lower for w in ["empresario", "empresa", "negocio", "comercial"]):
+        elif any(w in prod_lower for w in ["vivienda", "campestre", "propia", "casa", "familiar"]):
+            contact.client_type = "Persona Natural"
+            updated = True
+        elif any(w in prod_lower for w in ["bodega", "oficina", "comercial", "industrial"]):
             contact.client_type = "Empresario"
             updated = True
-        elif any(w in full_lower for w in ["persona natural", "vivienda", "campestre", "propia", "casa"]):
+        else:
             contact.client_type = "Persona Natural"
             updated = True
 
