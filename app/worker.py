@@ -309,7 +309,7 @@ async def process_whatsapp_message(ctx, payload: dict):
             transcription = None
             if file_bytes:
                 from app.services.transcription import transcribe_audio_bytes
-                transcription = await transcribe_audio_bytes(file_bytes, db=db)
+                transcription = await transcribe_audio_bytes(file_bytes, mime_type=mime_type or "audio/ogg", db=db)
                 
             if not transcription and media_id:
                 try:
