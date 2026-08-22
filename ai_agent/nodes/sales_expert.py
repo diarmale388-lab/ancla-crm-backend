@@ -60,6 +60,20 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
         "Este mensaje es la continuación de una conversación en curso. NO REPITAS el saludo inicial ni la bienvenida para mantener el diálogo natural."
     )
 
+    # Recuperar Directrices Oficiales Aprobadas por Dirección General (Candados 1 y 2)
+    approved_guidelines_str = ""
+    try:
+        from app.database import SessionLocal
+        from app.models.base import AIKnowledgeApproval
+        with SessionLocal() as db_session:
+            approved_items = db_session.query(AIKnowledgeApproval).filter(AIKnowledgeApproval.status == "APPROVED").all()
+            if approved_items:
+                approved_guidelines_str = "\n[DIRECTRICES TÉCNICAS OFICIALES APROBADAS POR DIRECCIÓN GENERAL (CUMPLIMIENTO OBLIGATORIO)]:\n"
+                for item in approved_items:
+                    approved_guidelines_str += f"• TEMA: {item.topic}\n  - Consulta/Duda: {item.detected_question}\n  - Respuesta Oficial Autorizada: {item.official_answer}\n"
+    except Exception:
+        pass
+
     # 1. PREFIJO ESTÁTICO (Invariable, cacheado automáticamente al 50% por OpenAI / 90% por Anthropic)
     static_system_message = SystemMessage(content=SALES_EXPERT_PROMPT)
 
@@ -74,10 +88,12 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
         f"- Cita actualmente agendada: {contact_active_appointment}\n"
         f"- Fecha y Hora Actual (Colombia - America/Bogota): {current_time_str}\n"
         f"⚠️ NUNCA OFREZCAS DÍAS NI HORAS ANTERIORES A ESTA FECHA/HORA.\n"
+        f"{approved_guidelines_str}"
         f"{lead_context_str}"
         f"{interaction_instruction}"
     )
     dynamic_system_message = SystemMessage(content=dynamic_context_str)
+
 
     # Sanitización de historial para eliminar plantillas antiguas redundantes y mensajes duplicados
     try:

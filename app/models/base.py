@@ -362,6 +362,27 @@ class AuditCorrection(Base):
     created_at: Mapped[dt_module.datetime] = mapped_column(DateTime, default=dt_module.datetime.utcnow, nullable=False)
 
 
+class AIKnowledgeApproval(Base):
+    """
+    Bandeja de Aprobación de Respuestas y Directrices Oficiales para Sofi AI (Candado 1 y 2).
+    Previene alucinaciones y garantiza que Sofi solo responda directrices aprobadas por Diego o Liliana.
+    """
+    __tablename__ = "ai_knowledge_approvals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    topic: Mapped[str] = mapped_column(String(150), nullable=False) # e.g. "Pozos Sépticos", "Licencias de Curaduría", "Cimentación"
+    source: Mapped[str] = mapped_column(String(100), default="LEON_INVESTIGA", nullable=False) # LEON_INVESTIGA, CLIENT_FAQ, MANUAL_ADMIN
+    detected_question: Mapped[str] = mapped_column(Text, nullable=False) # e.g. "¿Las casas incluyen el pozo séptico?"
+    official_answer: Mapped[str] = mapped_column(Text, nullable=False) # e.g. "Las casas vienen 100% terminadas de fábrica..."
+    status: Mapped[str] = mapped_column(String(50), default="PENDING", nullable=False) # PENDING, APPROVED, REJECTED
+    approved_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[dt_module.datetime] = mapped_column(DateTime, default=dt_module.datetime.utcnow, nullable=False)
+    updated_at: Mapped[dt_module.datetime] = mapped_column(DateTime, default=dt_module.datetime.utcnow, onupdate=dt_module.datetime.utcnow, nullable=False)
+
+    approver: Mapped[Optional["User"]] = relationship()
+
+
+
 class AdvisorBitacoraNote(Base):
     """
     Bitácora Comercial Pro de Atención del Asesor (Notas estructuradas de llamadas, reuniones y seguimiento).
