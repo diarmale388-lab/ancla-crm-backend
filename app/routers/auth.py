@@ -64,22 +64,33 @@ def login_access_token(
         login_str = form_data.username.strip()
         login_lower = login_str.lower()
         login_clean = login_lower.replace(" ", "")
+        login_prefix = login_str.split("@")[0].strip()
 
-        # 1. Coincidencia flexible por email, prefijo, nombre completo o alias sin espacios
+        # 1. Coincidencia flexible por email completo, prefijo antes de @, username o nombre completo
         candidate_users = db.query(User).filter(
             (User.email.ilike(login_str)) | 
+            (User.email.ilike(login_prefix)) |
             (User.email.ilike(f"{login_str}@%")) |
+            (User.email.ilike(f"{login_prefix}@%")) |
             (User.email.ilike(f"{login_clean}@%")) |
             (User.full_name.ilike(login_str)) |
-            (User.full_name.ilike(f"%{login_str}%"))
+            (User.full_name.ilike(login_prefix)) |
+            (User.full_name.ilike(f"%{login_str}%")) |
+            (User.full_name.ilike(f"%{login_prefix}%"))
         ).all()
 
-        # 2. Búsqueda inteligente por fragmento para nombres de usuario flexibles (ej. Lider Liliana)
-        if not candidate_users and ("liliana" in login_lower or "lider" in login_lower):
-            candidate_users = db.query(User).filter(
-                (User.email.ilike("%liliana%")) |
-                (User.full_name.ilike("%liliana%"))
-            ).all()
+        # 2. Búsqueda inteligente por fragmento para nombres de usuario flexibles (ej. Lider Liliana, Asesor)
+        if not candidate_users:
+            if "liliana" in login_lower or "lider" in login_lower:
+                candidate_users = db.query(User).filter(
+                    (User.email.ilike("%liliana%")) |
+                    (User.full_name.ilike("%liliana%"))
+                ).all()
+            elif "asesor" in login_lower or "harvey" in login_lower:
+                candidate_users = db.query(User).filter(
+                    (User.email.ilike("%asesor%")) |
+                    (User.full_name.ilike("%harvey%"))
+                ).all()
 
         user = None
         for u in candidate_users:
