@@ -4,7 +4,7 @@ from typing import Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import get_db, IS_PRODUCTION
 from app.config import settings
 from app.models.base import Contact, Message, SenderType, ChannelType, MessageType, MessageStatus, User
 from app.core.deps import get_current_user
@@ -167,8 +167,13 @@ def _verify_meta_hmac_signature(request: Request, raw_body: bytes, strict: bool)
     Valida la firma HMAC-SHA256 (X-Hub-Signature-256) que Meta adjunta a las llamadas
     reales a sus webhooks suscritos (POST /webhooks/meta y /webhooks/whatsapp).
 
-    strict=True: obligatorio. Si falta el secreto configurado, el header de firma o la
-    firma no coincide, se rechaza con 403. Sin excepciones por ausencia del header.
+    strict=True: obligatorio.
+      - En producción (IS_PRODUCTION=True): si falta META_APP_SECRET, el header de
+        firma, o la firma no coincide, se rechaza (503 si falta configuración, 403 si
+        la firma es inválida/ausente). Fail-closed: nunca se procesa sin validar.
+      - Fuera de producción (dev/test): si falta META_APP_SECRET se permite continuar
+        con un warning (para no bloquear desarrollo local sin el secreto), pero si el
+        secreto SÍ está configurado, la validación es igual de estricta que en prod.
 
     strict=False: modo best-effort (usado por rutas de importación de leads que NO
     provienen de una suscripción real de webhooks de Meta, ej. Zapier/Make/importación
@@ -179,7 +184,13 @@ def _verify_meta_hmac_signature(request: Request, raw_body: bytes, strict: bool)
 
     if strict:
         if not settings.META_APP_SECRET:
-            logger.warning("META_APP_SECRET no configurado en variables de entorno: procesando webhook sin validación HMAC para no perder leads.")
+            if IS_PRODUCTION:
+                logger.critical("META_APP_SECRET no configurado en producción: rechazando webhook de Meta/WhatsApp (fail-closed).")
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Webhook mal configurado: falta META_APP_SECRET en el entorno de producción."
+                )
+            logger.warning("META_APP_SECRET no configurado (entorno no productivo): procesando webhook sin validación HMAC.")
             return
         if not signature:
             logger.warning("Solicitud a webhook de Meta/WhatsApp rechazada: falta el header X-Hub-Signature-256.")
@@ -314,7 +325,9 @@ async def receive_meta_webhook(request: Request, db: Session = Depends(get_db)):
     """
     Endpoint real de webhooks suscritos en Meta (WhatsApp Cloud API / Graph API).
     La firma HMAC-SHA256 (X-Hub-Signature-256) es OBLIGATORIA: cualquier request sin
-    firma válida se rechaza con 403, sin excepción por ausencia del header.
+    firma válida se rechaza con 403. En producción, además, es fail-closed: si el
+    servidor no tiene META_APP_SECRET configurado, se rechaza con 503 en lugar de
+    procesar el webhook sin validar (ver _verify_meta_hmac_signature).
     """
     raw_body = await request.body()
     _verify_meta_hmac_signature(request, raw_body, strict=True)
