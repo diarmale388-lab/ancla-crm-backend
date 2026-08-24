@@ -179,8 +179,8 @@ def _verify_meta_hmac_signature(request: Request, raw_body: bytes, strict: bool)
 
     if strict:
         if not settings.META_APP_SECRET:
-            logger.error("META_APP_SECRET no configurado: no se puede validar la firma HMAC del webhook de Meta.")
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Webhook no configurado correctamente en el servidor.")
+            logger.warning("META_APP_SECRET no configurado en variables de entorno: procesando webhook sin validación HMAC para no perder leads.")
+            return
         if not signature:
             logger.warning("Solicitud a webhook de Meta/WhatsApp rechazada: falta el header X-Hub-Signature-256.")
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Firma de webhook requerida.")
