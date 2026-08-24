@@ -185,6 +185,19 @@ class AIEngine:
             all_state_msgs = final_state.get("messages", [])
             new_msgs = all_state_msgs[initial_msg_count:] if len(all_state_msgs) > initial_msg_count else all_state_msgs[-1:]
 
+            save_appointment_executed = False
+            for msg in all_state_msgs:
+                if getattr(msg, "type", "") == "tool" and getattr(msg, "name", "") == "save_appointment":
+                    save_appointment_executed = True
+                    break
+                for tc in getattr(msg, "tool_calls", None) or []:
+                    tc_name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "")
+                    if tc_name == "save_appointment":
+                        save_appointment_executed = True
+                        break
+                if save_appointment_executed:
+                    break
+
             # Extraer y combinar de forma limpia los mensajes generados por la IA
             ai_parts = []
             for msg in new_msgs:
@@ -211,10 +224,14 @@ class AIEngine:
 
             final_ai_msg = None
             if ai_parts:
-                if len(ai_parts) > 1 and not ai_parts[-1].startswith("¡Hola") and not ai_parts[-1].startswith("Hola"):
+                last_part = ai_parts[-1]
+                is_confirmation = "confirmada" in last_part.lower()
+                if save_appointment_executed or is_confirmation:
+                    final_ai_msg = last_part
+                elif len(ai_parts) > 1 and not last_part.startswith("¡Hola") and not last_part.startswith("Hola"):
                     final_ai_msg = "\n\n".join(ai_parts)
                 else:
-                    final_ai_msg = ai_parts[-1]
+                    final_ai_msg = last_part
 
             if final_ai_msg:
                 full_reply = final_ai_msg.strip()

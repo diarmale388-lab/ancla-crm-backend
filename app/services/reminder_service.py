@@ -9,7 +9,10 @@ from app.services.whatsapp import whatsapp_service
 
 logger = logging.getLogger("reminder_service")
 BOGOTA_TZ = zoneinfo.ZoneInfo("America/Bogota")
-DEFAULT_VIP_MEET = "https://meet.google.com/niv-fvrr-ryh"
+VIRTUAL_NO_MEET_LINE = (
+    "📲 Modalidad: Asesoría Virtual (Nuestro equipo se comunicará contigo puntualmente "
+    "por este medio para iniciar la videollamada)."
+)
 
 
 def format_time_12h(dt: datetime) -> str:
@@ -49,21 +52,25 @@ async def process_appointment_reminders(db: Session):
         name = contact.first_name or "Estimado/a"
         time_str = format_time_12h(appt.datetime)
         date_str = format_spanish_date(appt.datetime)
-        location_str = contact.lot_city or "tu municipio"
-        meet_url = appt.google_meet_url
+        lot_city = (contact.lot_city or "").strip()
+        project_context = f"para tu proyecto en {lot_city}" if lot_city else "para tu proyecto de casa modular"
+        meet_url = (appt.google_meet_url or "").strip() or None
         is_virtual = (appt.appointment_type or "VIRTUAL").upper() == "VIRTUAL"
 
         # 1. VENTANA 24 HORAS
         if 22 * 3600 <= total_seconds <= 26 * 3600 and not appt.reminder_24h_sent:
-            if is_virtual:
-                link_line = f"📲 Tu enlace de Google Meet: {meet_url}\n\n" if meet_url else "📲 Modalidad: Asesoría Virtual (nos conectaremos puntualmente por este medio).\n\n"
+            msg_text = None
+            if appt.created_at and (now_bogota - appt.created_at.replace(tzinfo=None)) <= timedelta(hours=3):
+                pass
+            elif is_virtual:
+                link_line = f"📲 Tu enlace de Google Meet: {meet_url}\n\n" if meet_url else f"{VIRTUAL_NO_MEET_LINE}\n\n"
                 msg_text = (
-                    f"¡Hola {name}! 👋 Te recordamos que mañana {date_str} a las {time_str} tenemos reservada tu *Asesoría Virtual* para tu proyecto en {location_str} 🏡✨.\n\n"
+                    f"¡Hola {name}! 👋 Te recordamos que mañana {date_str} a las {time_str} tenemos reservada tu *Asesoría Virtual* {project_context} 🏡✨.\n\n"
                     f"📍 Nuestro equipo te presentará en pantalla los planos de distribución, renders reales y la cotización personalizada puesta en tu lote.\n\n"
                     f"{link_line}"
                     f"¡Nos vemos mañana puntualmente!"
                 )
-            else:
+            elif not is_virtual:
                 msg_text = (
                     f"¡Hola {name}! 👋 Te recordamos que mañana {date_str} a las {time_str} tenemos reservada tu *Visita al Showroom en Armenia* (Avenida Centenario, frente a Pan y Miel) 🏡✨.\n\n"
                     f"🚗 Contamos con parqueadero privado y gratuito. Enlaces para llegar fácilmente:\n"
@@ -71,30 +78,34 @@ async def process_appointment_reminders(db: Session):
                     f"• Google Maps: https://maps.google.com/?q=4.5616751,-75.6455612\n\n"
                     f"¡Te esperamos mañana con gusto!"
                 )
-            
-            try:
-                res = await whatsapp_service.send_text_message(contact.phone, msg_text, db=db)
-                if res:
-                    appt.reminder_24h_sent = True
-                    db_msg = Message(
-                        contact_id=contact.id,
-                        sender_type=SenderType.SYSTEM,
-                        channel=ChannelType.WHATSAPP,
-                        content=msg_text,
-                        status=MessageStatus.DELIVERED
-                    )
-                    db.add(db_msg)
-                    db.commit()
-                    logger.info(f"Recordatorio 24h enviado exitosamente a {contact.phone} (Cita {appt.id})")
-            except Exception as err:
-                logger.error(f"Error enviando recordatorio 24h a {contact.phone}: {err}")
+
+            if msg_text:
+                try:
+                    res = await whatsapp_service.send_text_message(contact.phone, msg_text, db=db)
+                    if res:
+                        appt.reminder_24h_sent = True
+                        db_msg = Message(
+                            contact_id=contact.id,
+                            sender_type=SenderType.SYSTEM,
+                            channel=ChannelType.WHATSAPP,
+                            content=msg_text,
+                            status=MessageStatus.DELIVERED
+                        )
+                        db.add(db_msg)
+                        db.commit()
+                        logger.info(f"Recordatorio 24h enviado exitosamente a {contact.phone} (Cita {appt.id})")
+                except Exception as err:
+                    logger.error(f"Error enviando recordatorio 24h a {contact.phone}: {err}")
 
         # 2. VENTANA 2 HORAS
         if 90 * 60 <= total_seconds <= 150 * 60 and not appt.reminder_2h_sent:
             if is_virtual:
-                link_line = f"Puedes conectarte fácilmente desde tu celular o computador aquí:\n📲 {meet_url}\n\n" if meet_url else "Nuestro equipo se comunicará contigo puntualmente para iniciar la videollamada.\n\n"
+                link_line = (
+                    f"Puedes conectarte fácilmente desde tu celular o computador aquí:\n📲 {meet_url}\n\n"
+                    if meet_url else f"{VIRTUAL_NO_MEET_LINE}\n\n"
+                )
                 msg_text = (
-                    f"¡Hola {name}! ⏰ En 2 horas iniciamos tu *Asesoría Virtual* ({time_str}) para tu proyecto en {location_str} 🏡.\n\n"
+                    f"¡Hola {name}! ⏰ En 2 horas iniciamos tu *Asesoría Virtual* ({time_str}) {project_context} 🏡.\n\n"
                     f"{link_line}"
                     f"¿Nos confirmas si todo en orden para tu conexión? 😊"
                 )
@@ -126,7 +137,7 @@ async def process_appointment_reminders(db: Session):
         # 3. VENTANA 15 MINUTOS
         if 5 * 60 <= total_seconds <= 20 * 60 and not appt.reminder_15m_sent:
             if is_virtual:
-                link_line = f"📲 {meet_url}\n\n" if meet_url else ""
+                link_line = f"📲 {meet_url}\n\n" if meet_url else f"{VIRTUAL_NO_MEET_LINE}\n\n"
                 msg_text = (
                     f"¡Hola {name}! 👋 En 15 minutos nuestro equipo de expertos estará listo para atenderte en tu Asesoría Virtual:\n"
                     f"{link_line}"
