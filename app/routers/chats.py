@@ -147,7 +147,7 @@ def get_contact_messages(
     """
     contact = db.query(Contact).filter(Contact.id == contact_id).first()
     if not contact:
-        raise HTTPException(status_code=404, detail="Contacto no encontrado")
+        return []
         
     # Control de acceso: Asesores solo acceden a sus contactos asignados
     if current_user.role != "admin" and contact.assigned_user_id != current_user.id:
