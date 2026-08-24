@@ -33,6 +33,12 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
         bogota_now = dt_tz.datetime.now(dt_tz.timezone(dt_tz.timedelta(hours=-5)))
     current_time_str = bogota_now.strftime("%Y-%m-%d %I:%M %p")
 
+    dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+    meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+    hoy_es = f"{dias[bogota_now.weekday()]} {bogota_now.day} de {meses[bogota_now.month - 1]} de {bogota_now.year}"
+    manana_dt = bogota_now + dt_tz.timedelta(days=1)
+    manana_es = f"{dias[manana_dt.weekday()]} {manana_dt.day} de {meses[manana_dt.month - 1]}"
+
     
     # Formatear contexto de formulario de Meta Ads si está presente
     lead_context_str = ""
@@ -86,8 +92,9 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
         f"- ¿Posee lote propio?: {contact_has_land}\n"
         f"- Ubicación / Ciudad: {contact_location}\n"
         f"- Cita actualmente agendada: {contact_active_appointment}\n"
-        f"- Fecha y Hora Actual (Colombia - America/Bogota): {current_time_str}\n"
-        f"⚠️ NUNCA OFREZCAS DÍAS NI HORAS ANTERIORES A ESTA FECHA/HORA.\n"
+        f"- Fecha Actual (Colombia): {hoy_es} ({current_time_str})\n"
+        f"- Mañana es: {manana_es}\n"
+        f"⚠️ PROHIBIDO cambiar el día de la semana de una fecha. NUNCA OFREZCAS DÍAS NI HORAS ANTERIORES A ESTA FECHA/HORA.\n"
         f"{approved_guidelines_str}"
         f"{lead_context_str}"
         f"{interaction_instruction}"

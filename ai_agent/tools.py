@@ -363,13 +363,28 @@ async def consultar_disponibilidad(
             }
         }
 
+        dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+        meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+        dia_nombre = dias[target_date.weekday()]
+        mes_nombre = meses[target_date.month - 1]
+        fecha_es = f"{dia_nombre} {target_date.day} de {mes_nombre}"
+        relativo = "mañana " if (target_date - now_bogota.date()).days == 1 else ("hoy " if target_date == now_bogota.date() else "el ")
+        frase_sugerida = f"Para {relativo}{fecha_es}"
+
         return {
             "status": "success",
             "fecha": target_date.strftime("%Y-%m-%d"),
+            "fecha_texto_espanol": fecha_es,
+            "frase_fecha": frase_sugerida,
             "modalidad": modalidad,
             "horarios_disponibles": valid_slots,
             "max_capacidad_slot": max_capacity,
-            "whatsapp_interactive_payload": whatsapp_interactive_payload
+            "whatsapp_interactive_payload": whatsapp_interactive_payload,
+            "mensaje_para_ia": (
+                "USA OBLIGATORIAMENTE los campos 'fecha_texto_espanol' o 'frase_fecha' al mencionar la fecha "
+                "al cliente. PROHIBIDO inventar o cambiar el día de la semana. "
+                f"Ejemplo correcto: \"{frase_sugerida} tenemos espacios a las ...\""
+            )
         }
     except Exception as e:
         # IMPORTANTE: nunca se deben devolver horarios ficticios/hardcodeados aquí, ya que podrían
