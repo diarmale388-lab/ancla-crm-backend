@@ -106,6 +106,7 @@ def get_contacts_with_last_message(
     for contact in contacts:
         # Recuperación en memoria O(1)
         last_msg = last_msg_dict.get(contact.id)
+        effective_time = last_msg.created_at if last_msg else contact.created_at
             
         results.append({
             "id": contact.id,
@@ -125,11 +126,11 @@ def get_contacts_with_last_message(
             "lot_city": contact.lot_city,
             "client_type": contact.client_type,
             "last_message_content": last_msg.content if last_msg else None,
-            "last_message_time": last_msg.created_at if last_msg else None,
+            "last_message_time": effective_time,
             "last_message_sender": last_msg.sender_type if last_msg else None
         })
         
-    # Ordenar por fecha de último mensaje descendente (los chats más recientes arriba)
+    # Ordenar por fecha efectiva descendente (chats recientes o contactos recién creados ARRIBA DE TODO)
     results.sort(key=lambda x: x["last_message_time"] or datetime.min, reverse=True)
     return results
 
