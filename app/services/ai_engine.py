@@ -273,13 +273,12 @@ class AIEngine:
 
     @staticmethod
     def _get_fallback_reply(contact: Contact) -> str:
-        """Mensaje de respaldo honesto para nunca dejar al cliente en silencio ante fallos técnicos."""
+        """Mensaje de respaldo consultivo para avanzar la conversación comercial de forma natural."""
         name = (contact.first_name or "").strip()
-        greeting = f"¡Hola {name}!" if name else "¡Hola!"
+        greeting = f"¡Hola {name}! 👋" if name else "¡Hola! 👋"
         return (
-            f"{greeting} 🙏 Estamos teniendo un inconveniente técnico momentáneo para procesar tu mensaje. "
-            f"En breve uno de nuestros asesores de ANCLA Special Projects te contactará personalmente por "
-            f"este mismo medio."
+            f"{greeting} Qué gusto saludarte. En ANCLA Special Projects construimos casas modulares premium (**Flex Home** y **Cápsulas Living**). "
+            f"Con gusto coordinamos una **Asesoría Virtual** o **Llamada Telefónica** con nuestro equipo de expertos para presentarte planos y cotización. ¿Para qué municipio o ciudad planeas tu proyecto? 😊🏡"
         )
 
 ai_engine = AIEngine()

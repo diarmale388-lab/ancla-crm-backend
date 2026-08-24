@@ -150,7 +150,7 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
         response = await llm_with_tools.ainvoke(prompt_messages)
         try:
             safe_text = str(response.content)[:120].encode('ascii', errors='replace').decode('ascii')
-            print(f"[AI_ENGINE] Invocación LLM exitosa. Respuesta obtenida: {safe_text}...")
+            print(f"[AI_ENGINE] Invocación LLM exitosa ({ai_settings.SALES_EXPERT_MODEL}). Respuesta obtenida: {safe_text}...")
         except Exception:
             pass
         return {"messages": [response]}
@@ -158,16 +158,34 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
         import traceback
         err_tb = traceback.format_exc()
         try:
-            print(f"\n[FALLBACK] Excepción en sales_expert_node ({ai_settings.SALES_EXPERT_MODEL}): {e}")
-            print(f"[FALLBACK] Traceback completo:\n{err_tb}")
+            print(f"\n[FALLBACK] Excepción en sales_expert_node con modelo principal ({ai_settings.SALES_EXPERT_MODEL}): {e}")
+            print(f"[FALLBACK] Intentando recuperación automática con modelo de respaldo (openai/gpt-4o-mini)...")
         except Exception:
             pass
-        # NUNCA dejar al cliente sin respuesta ante un timeout/error del LLM: se entrega un mensaje
-        # de cortesía honesto en lugar de silencio absoluto (retornar messages=[] dejaba al usuario sin nada).
-        fallback_greeting = f"¡Hola {user_name}!" if user_name else "¡Hola!"
+
+        # Intento de rescate con modelo ultra-eficiente gpt-4o-mini
+        try:
+            fallback_llm = ChatOpenAI(
+                model="openai/gpt-4o-mini",
+                openai_api_key=api_key,
+                openai_api_base=ai_settings.OPENROUTER_BASE_URL,
+                temperature=0.4,
+                max_tokens=350,
+                default_headers={
+                    "HTTP-Referer": ai_settings.HTTP_REFERER,
+                    "X-Title": ai_settings.SITE_NAME,
+                }
+            ).bind_tools(ALL_AI_TOOLS)
+            fb_response = await fallback_llm.ainvoke(prompt_messages)
+            print(f"[AI_ENGINE] Recuperación exitosa con openai/gpt-4o-mini!")
+            return {"messages": [fb_response]}
+        except Exception as fb_err:
+            print(f"[FALLBACK_ERROR] Falló también modelo de respaldo: {fb_err}")
+
+        # Mensaje de cortesía consultivo y humano (NUNCA hablar de fallos técnicos ni de transferir a asesores externos)
+        fallback_greeting = f"¡Hola {user_name}! 👋" if user_name else "¡Hola! 👋"
         fallback_message = (
-            f"{fallback_greeting} 🙏 Tuvimos un pequeño inconveniente técnico procesando tu mensaje. "
-            f"¿Podrías repetírmelo en un momento? Si prefieres, con gusto te comunico con uno de nuestros "
-            f"asesores de ANCLA Special Projects."
+            f"{fallback_greeting} Qué gusto saludarte. En ANCLA Special Projects construimos casas modulares premium con ingeniería en acero (**Flex Home** y **Cápsulas Living**). "
+            f"Con mucho gusto podemos coordinar una **Asesoría Virtual** o **Llamada Telefónica** con nuestro equipo de expertos para presentarte planos y cotización. ¿En qué ciudad o municipio planeas tu proyecto? 😊🏡"
         )
         return {"messages": [AIMessage(content=fallback_message)]}
