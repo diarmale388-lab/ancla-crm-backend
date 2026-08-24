@@ -224,14 +224,7 @@ class AIEngine:
 
             final_ai_msg = None
             if ai_parts:
-                last_part = ai_parts[-1]
-                is_confirmation = "confirmada" in last_part.lower()
-                if save_appointment_executed or is_confirmation:
-                    final_ai_msg = last_part
-                elif len(ai_parts) > 1 and not last_part.startswith("¡Hola") and not last_part.startswith("Hola"):
-                    final_ai_msg = "\n\n".join(ai_parts)
-                else:
-                    final_ai_msg = last_part
+                final_ai_msg = ai_parts[-1].strip()
 
             if final_ai_msg:
                 full_reply = final_ai_msg.strip()
