@@ -1,0 +1,55 @@
+---
+description: Contrato Inviolable de Operación de Sofi AI — 5 Leyes Sagradas (NUNCA modificar sin autorización explícita de Dirección Comercial)
+alwaysApply: true
+---
+
+# 🏛️ CONTRATO INVIOLABLE DE OPERACIÓN DE SOFI AI
+
+> Este archivo es de cumplimiento OBLIGATORIO para cualquier IA o desarrollador que toque
+> `backend/ai_agent/`, `backend/app/services/ai_engine.py`, `backend/app/services/google_integration.py`
+> o `backend/app/services/reminder_service.py`. Complementa a `SOFI_MASTER_CONTRACT.md`.
+> Ningún refactor, "mejora" o simplificación puede violar las leyes de esta sección.
+
+## LEY 1 — Google Meet: Prohibido Inventar Links
+- **Prohibido** cualquier constante, default o fallback de tipo `DEFAULT_VIP_MEET` o link estático de Google Meet.
+- `google_meet_url` / `meet_url` SOLO puede provenir de la respuesta real de `create_google_calendar_event()`
+  (`hangoutLink` o `conferenceData.entryPoints`). Si `creds` es `None` (Dirección no ha conectado Google Calendar),
+  el valor DEBE permanecer `None`.
+- Si no hay `google_meet_url` generado, el mensaje al cliente (confirmación o recordatorio) debe indicar que
+  **el equipo se comunicará por WhatsApp/videollamada** en el horario acordado — nunca inventar ni reutilizar un link.
+- Referencia de patrón correcto: `VIRTUAL_NO_MEET_LINE` en `backend/app/services/reminder_service.py`.
+
+## LEY 2 — Calendario Determinista: Prohibido que el LLM calcule fechas
+- Toda fecha visible para el cliente DEBE llegar al LLM ya resuelta en español por Python
+  (`"Martes 25 de Agosto"`), nunca como ISO crudo (`"2026-08-25"`) ni como objeto `datetime` sin formatear.
+- El cálculo de día de la semana (`weekday()`) y mes SIEMPRE se hace en Python antes de construir el prompt/contexto.
+- Referencia de patrón correcto: `get_dynamic_days_list()` en `ai_engine.py` y `format_spanish_date()` en `reminder_service.py`.
+- Prohibido pasar `.isoformat()` de una fecha directamente a cualquier mensaje o contexto que el LLM redacte.
+
+## LEY 3 — Mensajes Atómicos: Prohibido concatenar preguntas con confirmaciones
+- Tras ejecutar `save_appointment` (o cualquier tool que mute estado en BD), la respuesta al cliente debe ser
+  ÚNICAMENTE el mensaje final de confirmación — nunca el resultado de concatenar `ai_parts` completo.
+- Regla de extracción obligatoria en `ai_engine.py`: si `save_appointment_executed` es `True` o el último
+  fragmento contiene una confirmación, se retorna solo `ai_parts[-1]`. Prohibido hacer
+  `"\n\n".join(ai_parts)` cuando hubo ejecución de una tool que confirma una acción irreversible.
+- Cualquier cambio a esta lógica de extracción requiere pasar la Suite Maestra de Pruebas
+  (`python backend/tests/test_master_suite.py`, 100% de éxito) antes de mergear.
+
+## LEY 4 — Recordatorios con Gracia: Prohibido disparar recordatorios al instante de agendar
+- Todo recordatorio de 24h DEBE exigir `created_at` con más de 3 horas de antigüedad antes de poder enviarse,
+  para evitar que una cita agendada dentro de la ventana de 22-26h dispare el recordatorio en el mismo
+  segundo en que se creó.
+- Referencia de patrón correcto: `backend/app/services/reminder_service.py`, bloque `VENTANA 24 HORAS`
+  (`if appt.created_at and (now_bogota - appt.created_at...) <= timedelta(hours=3): pass`).
+- Prohibido eliminar o reducir esta ventana de gracia sin autorización explícita de Dirección Comercial.
+
+## LEY 5 — Precios y Venta: Prohibido entregar cifras monetarias
+- Sofi AI JAMÁS entrega, insinúa ni cotiza precios, valores base ni estimaciones en dinero por chat.
+- Toda solicitud de precio se redirige con empatía hacia **Asesoría Virtual (Google Meet/Llamada)** o
+  **Visita al Showroom en Armenia**, donde el equipo de expertos presenta la cotización personalizada.
+- Ver Mandamiento 1 de `SOFI_MASTER_CONTRACT.md` para el protocolo de respuesta completo.
+
+---
+
+**Cualquier violación de estas 5 leyes en un Pull Request debe bloquear el merge**, sin excepción,
+independientemente de si "funciona" en pruebas manuales superficiales.
