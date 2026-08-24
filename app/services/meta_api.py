@@ -6,7 +6,11 @@ from app.config import settings
 
 logger = logging.getLogger("meta_api_service")
 
-VERIFIED_META_TOKEN = "EAAjwLoRIerUBSHHdpgf31uI1joi6jaALZB7XuPxOQANI1FkgIzYRoZCvIzqETZAaFbxK8aUYHrrZA6HPW3rZAdhv2ZCPviLshlJa3mxJGN7IP4lhXzHAgYjtMHDqoJhrE5fZB4lBdamYO87hu41YYFRKQNSU1rR1ZBNvHneAZBJsD4WQRS3bqJe3t69wA0ZBsepgZDZD"
+# El token real de Meta ya NO se hardcodea en el código fuente: se lee exclusivamente
+# desde la variable de entorno META_ACCESS_TOKEN (ver backend/.env / app/config.py).
+# Si no está configurada, el sistema queda sin token por defecto (fail-safe) en vez de
+# usar un token real embebido en el repositorio.
+VERIFIED_META_TOKEN = settings.META_ACCESS_TOKEN
 
 class MetaApiService:
     def get_token(self, db: Optional[Any] = None) -> Optional[str]:

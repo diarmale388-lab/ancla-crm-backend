@@ -23,50 +23,83 @@ def get_analytics_summary(
         )
 
     # 1. Pipeline Funnel (Etapas del embudo)
+    # Una sola consulta agregada (GROUP BY) en lugar de un COUNT() por etapa (N+1).
     stages = db.query(PipelineStage).order_by(PipelineStage.position).all()
-    funnel_data = []
-    for s in stages:
-        count = db.query(Contact).filter(Contact.pipeline_stage_id == s.id).count()
-        funnel_data.append({
+    contacts_per_stage = dict(
+        db.query(Contact.pipeline_stage_id, func.count(Contact.id))
+        .group_by(Contact.pipeline_stage_id)
+        .all()
+    )
+    funnel_data = [
+        {
             "stage_id": s.id,
             "stage_name": s.name,
-            "count": count
-        })
+            "count": contacts_per_stage.get(s.id, 0)
+        }
+        for s in stages
+    ]
 
-    # 2. Resumen de Citas
-    total_appointments = db.query(Appointment).count()
-    active_appointments = db.query(Appointment).filter(Appointment.status == "CONFIRMED").count()
-    cancelled_appointments = db.query(Appointment).filter(Appointment.status == "CANCELLED").count()
+    # 2. Resumen de Citas (agregado por status en una sola consulta)
+    appointments_by_status = dict(
+        db.query(Appointment.status, func.count(Appointment.id))
+        .group_by(Appointment.status)
+        .all()
+    )
+    total_appointments = sum(appointments_by_status.values())
+    active_appointments = appointments_by_status.get("CONFIRMED", 0)
+    cancelled_appointments = appointments_by_status.get("CANCELLED", 0)
 
-    # 3. Resumen de Mensajes (Eficacia IA)
-    msg_ai_count = db.query(Message).filter(Message.sender_type == SenderType.AI).count()
-    msg_human_count = db.query(Message).filter(Message.sender_type == SenderType.USER).count()
-    msg_contact_count = db.query(Message).filter(Message.sender_type == SenderType.CONTACT).count()
+    # 3. Resumen de Mensajes (Eficacia IA) — agregado por sender_type en una sola consulta
+    messages_by_sender_type = dict(
+        db.query(Message.sender_type, func.count(Message.id))
+        .group_by(Message.sender_type)
+        .all()
+    )
+    msg_ai_count = messages_by_sender_type.get(SenderType.AI, 0)
+    msg_human_count = messages_by_sender_type.get(SenderType.USER, 0)
+    msg_contact_count = messages_by_sender_type.get(SenderType.CONTACT, 0)
 
-    total_msgs = msg_ai_count + msg_human_count + msg_contact_count
+    total_msgs = sum(messages_by_sender_type.values())
     ai_ratio = round((msg_ai_count / (msg_ai_count + msg_human_count) * 100), 1) if (msg_ai_count + msg_human_count) > 0 else 0.0
 
     # 4. Desempeño por Asesor
+    # 3 consultas GROUP BY (una por métrica) en lugar de 3 COUNT() por asesor (1 + 3N).
     advisors = db.query(User).filter(User.is_active == True).all()
-    advisor_performance = []
-    for adv in advisors:
-        assigned_leads = db.query(Contact).filter(Contact.assigned_user_id == adv.id).count()
-        sent_messages = db.query(Message).filter(Message.sender_type == SenderType.USER, Message.sender_id == adv.id).count()
-        booked_appointments = db.query(Appointment).filter(Appointment.user_id == adv.id).count()
-        
-        advisor_performance.append({
+
+    leads_by_advisor = dict(
+        db.query(Contact.assigned_user_id, func.count(Contact.id))
+        .filter(Contact.assigned_user_id.isnot(None))
+        .group_by(Contact.assigned_user_id)
+        .all()
+    )
+    messages_by_advisor = dict(
+        db.query(Message.sender_id, func.count(Message.id))
+        .filter(Message.sender_type == SenderType.USER, Message.sender_id.isnot(None))
+        .group_by(Message.sender_id)
+        .all()
+    )
+    appointments_by_advisor = dict(
+        db.query(Appointment.user_id, func.count(Appointment.id))
+        .group_by(Appointment.user_id)
+        .all()
+    )
+
+    advisor_performance = [
+        {
             "advisor_id": adv.id,
             "full_name": adv.full_name,
             "role": adv.role,
-            "assigned_leads": assigned_leads,
-            "sent_messages": sent_messages,
-            "booked_appointments": booked_appointments
-        })
+            "assigned_leads": leads_by_advisor.get(adv.id, 0),
+            "sent_messages": messages_by_advisor.get(adv.id, 0),
+            "booked_appointments": appointments_by_advisor.get(adv.id, 0)
+        }
+        for adv in advisors
+    ]
 
     return {
         "funnel": funnel_data,
         "kpis": {
-            "total_leads": db.query(Contact).count(),
+            "total_leads": db.query(func.count(Contact.id)).scalar(),
             "active_appointments": active_appointments,
             "cancelled_appointments": cancelled_appointments,
             "total_appointments": total_appointments,

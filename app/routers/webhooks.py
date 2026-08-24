@@ -162,21 +162,39 @@ async def get_arq_pool():
     return arq_pool
 
 
-@router.post("/meta")
-@router.post("/whatsapp")
-@router.post("/leadgen")
-@router.post("/facebook-lead-ads")
-@router.post("/import-lead")
-@router.post("/import-leads")
-async def receive_meta_webhook(request: Request, db: Session = Depends(get_db)):
+def _verify_meta_hmac_signature(request: Request, raw_body: bytes, strict: bool) -> None:
     """
-    Endpoint centralizado para webhooks de Meta (WhatsApp, Instagram, Facebook y Lead Ads).
-    Valida firma criptográfica HMAC-SHA256 si está presente.
+    Valida la firma HMAC-SHA256 (X-Hub-Signature-256) que Meta adjunta a las llamadas
+    reales a sus webhooks suscritos (POST /webhooks/meta y /webhooks/whatsapp).
+
+    strict=True: obligatorio. Si falta el secreto configurado, el header de firma o la
+    firma no coincide, se rechaza con 403. Sin excepciones por ausencia del header.
+
+    strict=False: modo best-effort (usado por rutas de importación de leads que NO
+    provienen de una suscripción real de webhooks de Meta, ej. Zapier/Make/importación
+    manual, y por lo tanto nunca traen esta firma). Solo rechaza si viene una firma
+    presente pero inválida; no exige la firma si no viene.
     """
-    raw_body = await request.body()
-    
-    # Validación criptográfica HMAC de Meta
     signature = request.headers.get("X-Hub-Signature-256")
+
+    if strict:
+        if not settings.META_APP_SECRET:
+            logger.error("META_APP_SECRET no configurado: no se puede validar la firma HMAC del webhook de Meta.")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Webhook no configurado correctamente en el servidor.")
+        if not signature:
+            logger.warning("Solicitud a webhook de Meta/WhatsApp rechazada: falta el header X-Hub-Signature-256.")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Firma de webhook requerida.")
+        expected_sig = "sha256=" + hmac.new(
+            settings.META_APP_SECRET.encode("utf-8"),
+            raw_body,
+            hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(signature, expected_sig):
+            logger.warning("Firma de Meta Webhook inválida (HMAC SHA-256 mismatch)")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Firma de webhook inválida")
+        return
+
+    # Modo best-effort (rutas de importación de leads no firmadas por Meta)
     if settings.META_APP_SECRET and signature:
         expected_sig = "sha256=" + hmac.new(
             settings.META_APP_SECRET.encode("utf-8"),
@@ -187,6 +205,8 @@ async def receive_meta_webhook(request: Request, db: Session = Depends(get_db)):
             logger.warning("Firma de Meta Webhook inválida (HMAC SHA-256 mismatch)")
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Firma de webhook inválida")
 
+
+async def _dispatch_webhook_payload(raw_body: bytes, db: Session) -> Dict[str, Any]:
     try:
         payload = json.loads(raw_body.decode('utf-8')) if raw_body else {}
     except Exception:
@@ -286,6 +306,39 @@ async def receive_meta_webhook(request: Request, db: Session = Depends(get_db)):
         logger.info(f"[WEBHOOK] Rama de decisión tomada: Evento no reconocido (object={object_type})")
 
     return {"status": "success"}
+
+
+@router.post("/meta")
+@router.post("/whatsapp")
+async def receive_meta_webhook(request: Request, db: Session = Depends(get_db)):
+    """
+    Endpoint real de webhooks suscritos en Meta (WhatsApp Cloud API / Graph API).
+    La firma HMAC-SHA256 (X-Hub-Signature-256) es OBLIGATORIA: cualquier request sin
+    firma válida se rechaza con 403, sin excepción por ausencia del header.
+    """
+    raw_body = await request.body()
+    _verify_meta_hmac_signature(request, raw_body, strict=True)
+    return await _dispatch_webhook_payload(raw_body, db)
+
+
+@router.post("/leadgen")
+@router.post("/facebook-lead-ads")
+@router.post("/import-lead")
+@router.post("/import-leads")
+async def receive_lead_import_webhook(request: Request, db: Session = Depends(get_db)):
+    """
+    Rutas de importación de leads (Lead Ads nativo de Meta, y formularios externos tipo
+    Zapier/Make/importación manual que NO forman parte de la suscripción de webhooks de
+    Meta y por lo tanto nunca traen la firma X-Hub-Signature-256). La firma se valida en
+    modo best-effort: si viene, debe ser válida; si no viene, no se exige.
+
+    NOTA DE SEGURIDAD: a diferencia de /meta y /whatsapp, estas rutas siguen aceptando
+    solicitudes sin firma para no romper integraciones legítimas de importación de leads.
+    Se recomienda protegerlas con una API key dedicada en una fase posterior.
+    """
+    raw_body = await request.body()
+    _verify_meta_hmac_signature(request, raw_body, strict=False)
+    return await _dispatch_webhook_payload(raw_body, db)
 
 
 async def process_whatsapp_events(payload: Dict[str, Any]):

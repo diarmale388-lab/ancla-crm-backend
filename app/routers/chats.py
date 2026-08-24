@@ -8,7 +8,7 @@ from sqlalchemy import desc, func
 from app.database import get_db
 from app.models.base import User, Contact, Message, SenderType, ChannelType, MessageStatus, MessageType, AuditCorrection
 from app.schemas.chat import MessageSend, MessageResponse, ContactChatResponse, AssignRequest, CorrectionCreate, CorrectionResponse
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, get_current_user_flexible
 from app.core.socket_manager import manager
 from app.services.whatsapp import whatsapp_service
 from app.services.meta_api import meta_api_service
@@ -315,10 +315,13 @@ from fastapi.responses import Response
 @router.get("/media/{media_id}")
 async def get_chat_media(
     media_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_flexible)
 ):
     """
     Entrega archivos multimedia (imágenes, audios, documentos) guardados en Google Drive o local.
+    Requiere JWT válido (header Authorization o query param ?token=) para evitar exponer
+    fotos, audios y documentos de clientes sin autenticación.
     """
     import os
     # 1. Si está en Google Drive
@@ -1309,144 +1312,7 @@ async def decline_special_request(
     }
 
 
-from fastapi.responses import StreamingResponse
 import httpx
-
-@router.get("/media/{media_id}")
-async def get_media_proxy(
-    media_id: str,
-    db: Session = Depends(get_db)
-):
-    import os
-    import mimetypes
-
-    fallback_svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 200" width="100%" height="100%">
-  <rect width="100%" height="100%" fill="rgba(148, 163, 184, 0.05)" rx="12" stroke="rgba(148, 163, 184, 0.15)" stroke-width="1.5"/>
-  <g transform="translate(150, 90)" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif">
-    <circle cx="0" cy="-15" r="24" fill="rgba(148, 163, 184, 0.15)"/>
-    <path d="M-8,-23 h16 a2,2 0 0,1 2,2 v10 a2,2 0 0,1 -2,2 h-16 a2,2 0 0,1 -2,-2 v-10 a2,2 0 0,1 2,-2 z" fill="#64748b" opacity="0.8"/>
-    <circle cx="-3" cy="-18" r="2" fill="#fff" opacity="0.8"/>
-    <path d="M-10,-12 l5,-5 l3,3 l4,-4 l4,4" fill="none" stroke="#fff" stroke-width="1.5" stroke-linejoin="round" opacity="0.9"/>
-    <text y="30" font-size="12" font-weight="bold" fill="#64748b">Imagen no disponible</text>
-    <text y="48" font-size="9.5" fill="#94a3b8">Renovar Token de Meta</text>
-  </g>
-</svg>"""
-
-    # 0. Interceptar si es un archivo almacenado en Google Drive
-    if media_id.startswith("gdrive_"):
-        try:
-            from app.services.google_integration import download_file_from_google_drive
-            drive_id = media_id.replace("gdrive_", "")
-            result = await download_file_from_google_drive(drive_id)
-            if result:
-                file_bytes, mime_type = result
-                from io import BytesIO
-                return StreamingResponse(BytesIO(file_bytes), status_code=200, media_type=mime_type)
-        except Exception as e:
-            logger.error(f"Error sirviendo media de Google Drive (ID: {media_id}): {e}")
-
-    msg_type = "image"
-    try:
-        from app.models.base import Message
-        msg = db.query(Message).filter(Message.content.contains(media_id)).first()
-        if msg:
-            msg_type = (msg.message_type.value if hasattr(msg.message_type, 'value') else str(msg.message_type)).lower()
-    except Exception as db_err:
-        logger.error(f"Error querying message type for fallback: {db_err}")
-
-    # Chequear caché local primero (o archivos mock)
-    local_path = os.path.join("uploads", "media", media_id)
-    if os.path.exists(local_path):
-        mime_type, _ = mimetypes.guess_type(local_path)
-        if not mime_type:
-            if msg_type == "image":
-                mime_type = "image/jpeg"
-            elif msg_type == "audio":
-                mime_type = "audio/mpeg"
-            elif msg_type == "document":
-                mime_type = "application/pdf"
-            else:
-                mime_type = "application/octet-stream"
-        
-        def local_file_generator():
-            with open(local_path, "rb") as f:
-                while chunk := f.read(8192):
-                    yield chunk
-        return StreamingResponse(local_file_generator(), status_code=200, media_type=mime_type)
-
-    print(f"DEBUG MEDIA ID: {media_id}, MSG TYPE: {repr(msg_type)}, EQUALS IMAGE: {msg_type == 'image'}")
-
-    from app.config import settings
-    VERIFIED_TOKEN = "EAAjwLoRIerUBSHHdpgf31uI1joi6jaALZB7XuPxOQANI1FkgIzYRoZCvIzqETZAaFbxK8aUYHrrZA6HPW3rZAdhv2ZCPviLshlJa3mxJGN7IP4lhXzHAgYjtMHDqoJhrE5fZB4lBdamYO87hu41YYFRKQNSU1rR1ZBNvHneAZBJsD4WQRS3bqJe3t69wA0ZBsepgZDZD"
-    
-    token = None
-    try:
-        from app.models.base import SystemSetting
-        db_token = db.query(SystemSetting).filter(SystemSetting.key == "meta_access_token").first()
-        if db_token and db_token.value and len(db_token.value) > 20:
-            token = db_token.value
-    except Exception:
-        pass
-
-    if not token or len(token) < 20:
-        token = settings.META_ACCESS_TOKEN or VERIFIED_TOKEN
-
-    headers = {"Authorization": f"Bearer {token}"}
-    meta_url = f"https://graph.facebook.com/v18.0/{media_id}"
-    
-    try:
-        async with httpx.AsyncClient() as client:
-            res = await client.get(meta_url, headers=headers, timeout=10.0)
-            if res.status_code != 200 and token != VERIFIED_TOKEN:
-                logger.warning(f"Intento de lectura media {media_id} con token DB falló. Reintentando con VERIFIED_TOKEN...")
-                token = VERIFIED_TOKEN
-                headers = {"Authorization": f"Bearer {token}"}
-                res = await client.get(meta_url, headers=headers, timeout=10.0)
-
-            if res.status_code != 200:
-                logger.error(f"Error consultando metadata del archivo {media_id} a Meta: {res.text}")
-                if msg_type == "image":
-                    from fastapi.responses import Response
-                    return Response(content=fallback_svg, media_type="image/svg+xml")
-                raise HTTPException(status_code=404, detail="Archivo multimedia no disponible o token expirado.")
-            
-            media_info = res.json()
-            download_url = media_info.get("url")
-            mime_type = media_info.get("mime_type", "application/octet-stream")
-            
-        if not download_url:
-            if msg_type == "image":
-                from fastapi.responses import Response
-                return Response(content=fallback_svg, media_type="image/svg+xml")
-            raise HTTPException(status_code=404, detail="URL de descarga no encontrada en Meta.")
-            
-        # Generador asíncrono que abre su propio cliente de stream
-        async def event_generator():
-            async with httpx.AsyncClient() as stream_client:
-                async with stream_client.stream("GET", download_url, headers=headers) as r:
-                    if r.status_code != 200:
-                        logger.error(f"Error descargando media desde Meta: {r.status_code}")
-                        return
-                    async for chunk in r.aiter_bytes():
-                        yield chunk
-            
-        return StreamingResponse(
-            event_generator(),
-            status_code=200,
-            media_type=mime_type
-        )
-    except HTTPException as he:
-        # Propagar directamente excepciones HTTP conocidas (como el 401 del token expirado)
-        if msg_type == "image":
-            from fastapi.responses import Response
-            return Response(content=fallback_svg, media_type="image/svg+xml")
-        raise he
-    except Exception as e:
-        logger.error(f"Error al servir media proxy para ID {media_id}: {e}")
-        if msg_type == "image":
-            from fastapi.responses import Response
-            return Response(content=fallback_svg, media_type="image/svg+xml")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 class MessageEdit(BaseModel):

@@ -372,12 +372,22 @@ async def consultar_disponibilidad(
             "whatsapp_interactive_payload": whatsapp_interactive_payload
         }
     except Exception as e:
+        # IMPORTANTE: nunca se deben devolver horarios ficticios/hardcodeados aquí, ya que podrían
+        # no existir realmente en la agenda y generar dobles reservas o promesas incumplidas.
+        # Ante un fallo real de consulta, se retorna la lista vacía junto con una instrucción
+        # explícita para que el LLM informe honestamente al cliente en lugar de inventar horarios.
         return {
             "status": "error",
             "error": str(e),
             "fecha": fecha_solicitada,
             "modalidad": modalidad,
-            "horarios_disponibles": ["10:00 AM", "11:30 AM", "02:00 PM"]
+            "horarios_disponibles": [],
+            "mensaje_para_ia": (
+                "No fue posible consultar la disponibilidad real de la agenda en este momento debido a un "
+                "error técnico. NO inventes ni ofrezcas horarios. Discúlpate con calidez, indica que hubo un "
+                "inconveniente técnico momentáneo y ofrece intentar de nuevo en un momento o escalar la "
+                "solicitud con `request_human_handover` si el cliente lo prefiere."
+            )
         }
 
 
@@ -593,14 +603,88 @@ async def request_human_handover(phone: str, reason: str) -> Dict[str, Any]:
     Returns:
         Resultado de la señalización de handover en el CRM.
     """
-    # EL EQUIPO DEL CRM CORE IMPLEMENTARÁ LA DESACTIVACIÓN DE CHATBOT Y ASIGNACIÓN DE ADVISOR AQUÍ
-    return {
-        "status": "pending_crm_implementation",
-        "success": True,
-        "phone": phone,
-        "reason": reason,
-        "handover_triggered": True
-    }
+    try:
+        from app.database import SessionLocal
+        from app.models.base import Contact, Message, SenderType, ChannelType, MessageStatus
+        from app.services.push_service import send_webpush_to_all
+
+        db = SessionLocal()
+        try:
+            clean_phone = (phone or "").replace("+", "").replace(" ", "").replace("-", "")
+            contact = None
+            if clean_phone:
+                contact = db.query(Contact).filter(
+                    (Contact.phone == phone) | (Contact.phone == f"+{phone}") | (Contact.phone.ilike(f"%{clean_phone[-10:]}%"))
+                ).first()
+
+            if not contact:
+                return {
+                    "status": "error",
+                    "success": False,
+                    "phone": phone,
+                    "reason": reason,
+                    "handover_triggered": False,
+                    "error": "Contacto no encontrado en el CRM"
+                }
+
+            # 1. Apagar el piloto automático de Sofi AI para este chat específico
+            contact.chatbot_enabled = False
+            db.add(contact)
+
+            # 2. Dejar constancia interna en la línea de tiempo del chat
+            note_content = (
+                f"🙋 [SOLICITUD DE ATENCIÓN HUMANA]:\n"
+                f"El cliente {contact.first_name or phone} ({contact.phone}) solicitó hablar con un asesor humano.\n"
+                f"Motivo: {reason or 'No especificado'}.\n"
+                f"👉 El piloto automático de Sofi AI fue desactivado para este chat. Requiere atención de un asesor."
+            )
+            internal_note = Message(
+                contact_id=contact.id,
+                sender_type=SenderType.SYSTEM,
+                channel=ChannelType.SYSTEM,
+                content=note_content,
+                status=MessageStatus.DELIVERED
+            )
+            db.add(internal_note)
+            db.commit()
+
+            # 3. Notificar en tiempo real al equipo comercial vía Web Push
+            push_payload = {
+                "title": f"🙋 Atención Humana Solicitada: {contact.first_name or phone}",
+                "body": f"Motivo: {reason or 'No especificado'}. Toca para atender en el CRM.",
+                "icon": "/ancla_app_icon_192.png",
+                "badge": "/notification-badge.png",
+                "tag": f"human_handover_{contact.id}",
+                "data": {
+                    "url": f"/?tab=chats&contact_id={contact.id}",
+                    "contact_id": contact.id,
+                    "phone": contact.phone
+                }
+            }
+            try:
+                await send_webpush_to_all(payload=push_payload, db=db)
+            except Exception:
+                pass
+
+            return {
+                "status": "success",
+                "success": True,
+                "phone": phone,
+                "reason": reason,
+                "handover_triggered": True,
+                "contact_id": contact.id
+            }
+        finally:
+            db.close()
+    except Exception as e:
+        return {
+            "status": "error",
+            "success": False,
+            "phone": phone,
+            "reason": reason,
+            "handover_triggered": False,
+            "error": str(e)
+        }
 
 
 @tool

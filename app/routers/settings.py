@@ -12,6 +12,7 @@ import pypdf
 from app.database import get_db
 from app.models.base import SystemSetting, User, KnowledgeDocument
 from app.routers.auth import get_current_user
+from app.core.deps import get_current_user_flexible
 from app.config import settings
 from app.core.crypto import encrypt_value, decrypt_value
 
@@ -759,7 +760,7 @@ CONDICIONES:
             logger.info("SMTP no configurado completamente. Se omite el envío del correo real.")
 
     # 5. Insertar el mensaje enviado por WhatsApp en la base de datos (con enlace al PDF)
-    public_pdf_link = f"http://localhost:8001/api/v1/settings/proposals/{pdf_filename}"
+    public_pdf_link = f"{settings.PUBLIC_BASE_URL}{settings.API_V1_STR}/settings/proposals/{pdf_filename}"
     whatsapp_msg_with_pdf = whatsapp_msg + f"\n\nDESCARGAR PROPUESTA PDF COMPLETA: {public_pdf_link}"
 
     new_msg = Message(
@@ -821,11 +822,20 @@ CONDICIONES:
 from fastapi.responses import FileResponse
 
 @router.get("/proposals/{filename}")
-def download_proposal_pdf(filename: str):
-    file_path = os.path.join("scratch", filename)
+def download_proposal_pdf(
+    filename: str,
+    current_user: User = Depends(get_current_user_flexible)
+):
+    """
+    Requiere JWT válido (header Authorization o query param ?token=) para evitar que
+    cotizaciones comerciales en PDF queden descargables por cualquiera con la URL.
+    """
+    # Evitar path traversal: solo se permite el nombre de archivo plano dentro de scratch/.
+    safe_filename = os.path.basename(filename)
+    file_path = os.path.join("scratch", safe_filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Archivo de propuesta no encontrado")
-    return FileResponse(file_path, media_type="application/pdf", filename=filename)
+    return FileResponse(file_path, media_type="application/pdf", filename=safe_filename)
 
 
 @router.post("/upload-pdf-template")

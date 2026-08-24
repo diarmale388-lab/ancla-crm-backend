@@ -108,21 +108,25 @@ class AIEngine:
 
         from ai_agent.graph import sofi_ai_agent
         from langchain_core.messages import HumanMessage, AIMessage
-        import time
 
-        # Cargar historial relacional directamente desde la base de datos PostgreSQL
+        # Cargar historial relacional directamente desde la base de datos PostgreSQL.
+        # IMPORTANTE: cada mensaje recibe un `id` determinístico basado en su PK de BD para que el
+        # reducer `add_messages` de LangGraph pueda deduplicar por id en vez de acumular duplicados
+        # cada vez que se reenvía el mismo historial reciente sobre el thread_id persistente del cliente.
         db_msgs = db.query(Message).filter(Message.contact_id == contact.id).order_by(Message.created_at.asc()).all()
         langchain_msgs = []
         for m in db_msgs[-10:]:
+            msg_id = f"db_{m.id}"
             if m.sender_type == SenderType.CONTACT:
-                langchain_msgs.append(HumanMessage(content=m.content or ""))
+                langchain_msgs.append(HumanMessage(content=m.content or "", id=msg_id))
             elif m.sender_type == SenderType.AI:
-                langchain_msgs.append(AIMessage(content=m.content or ""))
+                langchain_msgs.append(AIMessage(content=m.content or "", id=msg_id))
 
         if langchain_msgs and isinstance(langchain_msgs[-1], HumanMessage):
-            langchain_msgs[-1] = HumanMessage(content=full_message_payload)
+            langchain_msgs[-1] = HumanMessage(content=full_message_payload, id=langchain_msgs[-1].id)
         elif not langchain_msgs or not isinstance(langchain_msgs[-1], HumanMessage):
-            langchain_msgs.append(HumanMessage(content=full_message_payload))
+            import uuid
+            langchain_msgs.append(HumanMessage(content=full_message_payload, id=f"live_{uuid.uuid4().hex}"))
 
         try:
             print(f"\n[AI_ENGINE] Historial cargado de la BD ({len(db_msgs)} mensajes en total, {len(langchain_msgs)} enviados al LLM):")
@@ -152,7 +156,10 @@ class AIEngine:
             mod_str = getattr(active_appt, 'modality', None) or contact.scheduling_state or "Virtual"
             active_appt_str = f"{active_appt.datetime.strftime('%A %d de %B a las %I:%M %p')} (Modalidad: {mod_str})"
 
-        thread_key = f"{contact.phone}_{int(time.time())}"
+        # ID DE HILO ESTABLE POR CLIENTE: usar únicamente el teléfono (sin timestamp) para que
+        # LangGraph reutilice el mismo checkpoint de memoria en cada turno de la conversación,
+        # en lugar de crear un hilo nuevo (y huérfano) por cada mensaje entrante.
+        thread_key = str(contact.phone)
         config = {"configurable": {"thread_id": thread_key}}
         input_state = {
             "messages": langchain_msgs,
@@ -219,8 +226,12 @@ class AIEngine:
                 logger.info("[AI_ENGINE] Respuesta generada exitosamente por el Agente")
                 return full_reply
 
+            # El grafo se ejecutó sin excepciones pero no produjo ningún texto útil para el cliente
+            # (ej. el LLM solo emitió llamadas a herramientas sin mensaje final). Para NUNCA dejar
+            # al cliente en silencio, se entrega un mensaje de cortesía honesto.
             print("[AI_ENGINE] Advertencia: No se encontró ningún mensaje válido en el estado final del agente.")
-            return None
+            logger.warning("[AI_ENGINE] El grafo no produjo texto final; se envía mensaje de cortesía de respaldo")
+            return self._get_fallback_reply(contact)
 
         except Exception as e:
             import traceback
@@ -246,6 +257,19 @@ class AIEngine:
             except Exception:
                 pass
 
-            return None
+            # CORRECCIÓN CRÍTICA: antes se retornaba None y el cliente se quedaba sin respuesta ante
+            # un timeout o error del agente. Ahora se entrega siempre un mensaje honesto de cortesía.
+            return self._get_fallback_reply(contact)
+
+    @staticmethod
+    def _get_fallback_reply(contact: Contact) -> str:
+        """Mensaje de respaldo honesto para nunca dejar al cliente en silencio ante fallos técnicos."""
+        name = (contact.first_name or "").strip()
+        greeting = f"¡Hola {name}!" if name else "¡Hola!"
+        return (
+            f"{greeting} 🙏 Estamos teniendo un inconveniente técnico momentáneo para procesar tu mensaje. "
+            f"En breve uno de nuestros asesores de ANCLA Special Projects te contactará personalmente por "
+            f"este mismo medio."
+        )
 
 ai_engine = AIEngine()

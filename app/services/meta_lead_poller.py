@@ -4,8 +4,7 @@ import json
 import httpx
 from app.database import SessionLocal
 from app.models.base import Contact, SystemSetting
-from app.services.meta_api import meta_api_service
-from app.services.whatsapp import VERIFIED_META_TOKEN
+from app.services.meta_api import meta_api_service, VERIFIED_META_TOKEN
 
 logger = logging.getLogger("meta_lead_poller")
 

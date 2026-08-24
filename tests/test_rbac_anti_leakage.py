@@ -17,14 +17,14 @@ def db_session():
 
 @pytest.fixture(scope="module")
 def admin_headers(db_session):
-    admin = db_session.query(User).filter(User.role == UserRole.ADMIN).first()
-    token = create_access_token({"sub": str(admin.id), "id": admin.id, "role": "ADMIN"})
+    admin = db_session.query(User).filter(User.role == UserRole.ADMIN, User.is_active == True).first()
+    token = create_access_token(subject=admin.id)
     return {"Authorization": f"Bearer {token}"}
 
 @pytest.fixture(scope="module")
 def asesor_headers(db_session):
-    asesor = db_session.query(User).filter(User.role == UserRole.ASESOR).first()
-    token = create_access_token({"sub": str(asesor.id), "id": asesor.id, "role": "ASESOR"})
+    asesor = db_session.query(User).filter(User.role == UserRole.ASESOR, User.is_active == True).first()
+    token = create_access_token(subject=asesor.id)
     return {"Authorization": f"Bearer {token}"}
 
 def test_asesor_cannot_view_unassigned_contacts(asesor_headers, db_session):
@@ -32,7 +32,7 @@ def test_asesor_cannot_view_unassigned_contacts(asesor_headers, db_session):
     res = client.get("/api/v1/chats/contacts", headers=asesor_headers)
     assert res.status_code == 200
     contacts = res.json()
-    asesor = db_session.query(User).filter(User.role == UserRole.ASESOR).first()
+    asesor = db_session.query(User).filter(User.role == UserRole.ASESOR, User.is_active == True).first()
     for c in contacts:
         assert c["assigned_user_id"] == asesor.id, f"Fuga de contacto detectada: Contacto #{c['id']} visible para asesor {asesor.id}"
 

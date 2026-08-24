@@ -24,7 +24,7 @@ async def trigger_immediate_leads_sync(
     para ingresar instantáneamente cualquier lead pendiente al CRM.
     """
     from app.services.meta_lead_poller import get_active_form_ids
-    from app.services.whatsapp import VERIFIED_META_TOKEN
+    from app.services.meta_api import VERIFIED_META_TOKEN
     from app.services.leadgen_service import process_leadgen_submission
     from app.models.base import SystemSetting
     import httpx

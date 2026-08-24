@@ -5,7 +5,11 @@ from typing import Optional
 class Settings(BaseSettings):
     PROJECT_NAME: str = "CRM Omnicanal Antigravity"
     API_V1_STR: str = "/api/v1"
-    
+
+    # URL pública base del backend (usada para construir enlaces absolutos, ej. PDFs de propuestas).
+    # NUNCA debe apuntar a localhost en producción: se configura vía variable de entorno por despliegue.
+    PUBLIC_BASE_URL: str = os.getenv("PUBLIC_BASE_URL", "https://ancla-crm-backend-production.up.railway.app")
+
     # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./crm.db")
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://default:fLedMAtmksxQSTEuQSlcldXzCvTbsNuD@redis.railway.internal:6379")

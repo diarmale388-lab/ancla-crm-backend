@@ -142,4 +142,12 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
             print(f"[FALLBACK] Traceback completo:\n{err_tb}")
         except Exception:
             pass
-        return {"messages": []}
+        # NUNCA dejar al cliente sin respuesta ante un timeout/error del LLM: se entrega un mensaje
+        # de cortesía honesto en lugar de silencio absoluto (retornar messages=[] dejaba al usuario sin nada).
+        fallback_greeting = f"¡Hola {user_name}!" if user_name else "¡Hola!"
+        fallback_message = (
+            f"{fallback_greeting} 🙏 Tuvimos un pequeño inconveniente técnico procesando tu mensaje. "
+            f"¿Podrías repetírmelo en un momento? Si prefieres, con gusto te comunico con uno de nuestros "
+            f"asesores de ANCLA Special Projects."
+        )
+        return {"messages": [AIMessage(content=fallback_message)]}
