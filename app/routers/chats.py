@@ -813,10 +813,12 @@ async def add_bitacora_note(
     if not contact:
         raise HTTPException(status_code=404, detail="Contacto no encontrado")
 
+    real_author = current_user.full_name or payload.author_name or "Asesor Comercial"
+
     note = AdvisorBitacoraNote(
         contact_id=contact.id,
         user_id=current_user.id,
-        author_name=payload.author_name or current_user.full_name or "Asesor",
+        author_name=real_author,
         note_type=payload.note_type,
         call_result=payload.call_result,
         construction_timeline=payload.construction_timeline,
@@ -852,15 +854,27 @@ def get_bitacora_notes(
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
-    Obtiene el historial cronológico de la bitácora comercial del prospecto.
+    Obtiene el historial cronológico de la bitácora comercial del prospecto con el autor real.
     """
-    from app.models.base import AdvisorBitacoraNote
+    from app.models.base import AdvisorBitacoraNote, User
     notes = db.query(AdvisorBitacoraNote).filter(
         AdvisorBitacoraNote.contact_id == contact_id
     ).order_by(desc(AdvisorBitacoraNote.created_at)).all()
 
-    return [
-        {
+    # Mapeo O(1) de usuarios para resolver el autor real por ID
+    user_ids = {n.user_id for n in notes if n.user_id}
+    users_dict = {}
+    if user_ids:
+        users = db.query(User).filter(User.id.in_(user_ids)).all()
+        users_dict = {u.id: u.full_name for u in users}
+
+    results = []
+    for n in notes:
+        resolved_author = n.author_name
+        if resolved_author in ["Liliana / Asesor", None, "", "Asesor", "Liliana / Asesor "]:
+            resolved_author = users_dict.get(n.user_id) or n.author_name or "Liliana León"
+
+        results.append({
             "id": n.id,
             "note_type": n.note_type,
             "call_result": n.call_result,
@@ -869,10 +883,11 @@ def get_bitacora_notes(
             "next_action": n.next_action,
             "next_action_date": n.next_action_date,
             "content": n.content,
-            "author_name": n.author_name,
+            "author_name": resolved_author,
             "created_at": n.created_at
-        } for n in notes
-    ]
+        })
+
+    return results
 
 class AdvisorStatusPayload(BaseModel):
     advisor_status: str
