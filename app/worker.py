@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models.base import Contact, Message, SenderType, ChannelType, MessageType, MessageStatus
+from app.models.base import Contact, Message, SenderType, ChannelType, MessageType, MessageStatus, Appointment, PipelineStage
 from app.core.round_robin import assign_lead_round_robin
 from app.core.socket_manager import manager
 from app.services.whatsapp import whatsapp_service
@@ -568,7 +568,14 @@ async def process_whatsapp_message(ctx, payload: dict):
             
             notes_str = (contact.qualification_notes or "").lower()
             source_str = (contact.source or "").lower()
-            modality = "VIRTUAL" if any(w in notes_str or w in source_str for w in ["virtual", "llamada", "zoom", "meet"]) else "PRESENCIAL"
+            # ⚠️ ARQUITECTURA DE MODALIDADES EXACTAS: LLAMADA es LLAMADA y VIRTUAL es VIRTUAL, sin
+            # plegar una dentro de la otra (ver ai_agent/tools.py::_resolve_modality como referencia).
+            if any(w in notes_str or w in source_str for w in ["presencial", "showroom", "visita"]):
+                modality = "PRESENCIAL"
+            elif any(w in notes_str or w in source_str for w in ["llamada", "telefon"]) and not any(w in notes_str or w in source_str for w in ["videollamada", "whatsapp", "zoom"]):
+                modality = "LLAMADA"
+            else:
+                modality = "VIRTUAL"
             
             contact.scheduling_state = f"AWAITING_DAY:{modality}"
             db.add(contact)
@@ -606,9 +613,15 @@ async def process_whatsapp_message(ctx, payload: dict):
             if next_week_rows:
                 sections.append({"title": "🗓️ Próxima Semana", "rows": next_week_rows[:5]})
 
+            modality_label = {
+                "PRESENCIAL": "Visita Presencial en Showroom Armenia",
+                "LLAMADA": "Llamada Telefónica Comercial",
+                "VIRTUAL": "Asesoría Virtual"
+            }.get(modality, "Asesoría Virtual")
+
             body_txt = (
                 f"¡No te preocupes, {name}! 🗓️ Entendemos que se presentan inconvenientes. Hemos liberado tu cupo anterior.\n\n"
-                f"Para tu **{'Visita Presencial en Showroom Armenia' if modality == 'PRESENCIAL' else 'Asesoría Virtual (Google Meet / Zoom)'}**, "
+                f"Para tu **{modality_label}**, "
                 "por favor abre el menú desplegable a continuación y selecciona el nuevo día de tu preferencia:"
             )
 
@@ -715,13 +728,19 @@ async def process_whatsapp_message(ctx, payload: dict):
         check_message_keywords_trigger(db, contact, content)
 
         # Persistencia de Modalidad en Estado de Contacto
+        # ⚠️ ARQUITECTURA DE MODALIDADES EXACTAS: LLAMADA es LLAMADA y VIRTUAL es VIRTUAL (nunca se
+        # deben plegar entre sí). Ver ai_agent/tools.py::_resolve_modality como referencia canónica.
         content_lower = (content or "").lower()
-        if "virtual" in content_lower or "llamada" in content_lower:
-            contact.scheduling_state = "MODALITY_VIRTUAL"
+        if "presencial" in content_lower or "showroom" in content_lower or "visita" in content_lower:
+            contact.scheduling_state = "MODALITY_PRESENCIAL"
             db.add(contact)
             db.commit()
-        elif "presencial" in content_lower or "showroom" in content_lower or "visita" in content_lower:
-            contact.scheduling_state = "MODALITY_PRESENCIAL"
+        elif ("llamada" in content_lower or "telefon" in content_lower) and "videollamada" not in content_lower:
+            contact.scheduling_state = "MODALITY_LLAMADA"
+            db.add(contact)
+            db.commit()
+        elif "virtual" in content_lower or "videollamada" in content_lower:
+            contact.scheduling_state = "MODALITY_VIRTUAL"
             db.add(contact)
             db.commit()
 
@@ -1165,6 +1184,9 @@ async def appointment_2h_reminder_cron_job(ctx):
     """
     Tarea cron que se ejecuta cada 15 minutos en Railway para buscar citas programadas dentro de las próximas 2 horas.
     Envía el recordatorio de WhatsApp con botones interactivos y mapas GPS.
+
+    ⚠️ ARQUITECTURA DE MODALIDADES EXACTAS (LEY 1 y LEY 7 del Contrato Inviolable Sofi AI):
+    LLAMADA es LLAMADA y VIRTUAL es VIRTUAL. Prohibido mencionar Google Meet/Zoom en cualquier mensaje.
     """
     db = SessionLocal()
     try:
@@ -1194,7 +1216,9 @@ async def appointment_2h_reminder_cron_job(ctx):
                 continue
                 
             time_str = appt.datetime.strftime("%I:%M %p")
-            is_presencial = (appt.appointment_type or "").upper() == "PRESENCIAL"
+            appt_modality_upper = (appt.appointment_type or "").upper()
+            is_presencial = appt_modality_upper == "PRESENCIAL"
+            is_llamada = "LLAMADA" in appt_modality_upper or "TELEFON" in appt_modality_upper
             
             name = contact.first_name or "Estimado cliente"
             if is_presencial:
@@ -1206,11 +1230,17 @@ async def appointment_2h_reminder_cron_job(ctx):
                     f"🔹 **Waze**: https://waze.com/ul?q=Avenida+Centenario+Armenia+Quindio\n\n"
                     f"¡Nos vemos en un par de horas! 🏡🤝"
                 )
+            elif is_llamada:
+                msg_body = (
+                    f"¡Hola {name}! 📞✨ Te recordamos que hoy a las **{time_str}** "
+                    f"tenemos agendada tu **Llamada Telefónica Comercial** con nuestro equipo de ANCLA Special Projects.\n\n"
+                    f"Te llamaremos puntualmente a este mismo número. ¡En breve nos comunicamos contigo! 📲🤝"
+                )
             else:
                 msg_body = (
                     f"¡Hola {name}! 💻✨ Te recordamos que hoy a las **{time_str}** "
-                    f"tenemos agendada tu **Asesoría Virtual (Google Meet / Zoom o Llamada Comercial)** con nuestro equipo de ANCLA Special Projects.\n\n"
-                    f"¡En breve nos comunicaremos contigo! 📲🤝"
+                    f"tenemos agendada tu **Asesoría Virtual** con nuestro equipo de ANCLA Special Projects.\n\n"
+                    f"📲 Nuestro equipo se comunicará contigo puntualmente por este medio para iniciar la videollamada. ¡En breve nos comunicamos contigo! 🤝"
                 )
                 
             await whatsapp_service.send_text_message(to_phone=contact.phone, message_text=msg_body, db=db)
@@ -1236,6 +1266,9 @@ async def appointment_24h_reminder_cron_job(ctx):
     Tarea cron para enviar un recordatorio 24h antes de la cita.
     REGLA: Únicamente se envía si la cita fue reservada con MÁS de 24 horas de antelación
     ((datetime - created_at) > 86400 segundos). Si fue agendada en las últimas 24h, se omite.
+
+    ⚠️ ARQUITECTURA DE MODALIDADES EXACTAS (LEY 1 y LEY 7 del Contrato Inviolable Sofi AI):
+    LLAMADA es LLAMADA y VIRTUAL es VIRTUAL. Prohibido mencionar Google Meet en cualquier mensaje.
     """
     db = SessionLocal()
     try:
@@ -1270,7 +1303,9 @@ async def appointment_24h_reminder_cron_job(ctx):
                 continue
                 
             time_str = appt.datetime.strftime("%I:%M %p").lstrip('0')
-            is_presencial = (appt.appointment_type or "").upper() == "PRESENCIAL"
+            appt_modality_upper = (appt.appointment_type or "").upper()
+            is_presencial = appt_modality_upper == "PRESENCIAL"
+            is_llamada = "LLAMADA" in appt_modality_upper or "TELEFON" in appt_modality_upper
             name = contact.first_name or "Estimado cliente"
             
             days_es = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
@@ -1283,10 +1318,16 @@ async def appointment_24h_reminder_cron_job(ctx):
                     f"para tu **Visita Presencial en nuestro Showroom de Armenia** (Av. Centenario, frente a Pan y Miel).\n\n"
                     f"¿Nos confirmas tu asistencia para reservar la atención de nuestro asesor?"
                 )
+            elif is_llamada:
+                msg_body = (
+                    f"¡Hola {name}! 📞✨ Mañana es el gran día (**{formatted_date}** a las **{time_str}**) "
+                    f"para tu **Llamada Telefónica Comercial** con nuestro equipo de ANCLA Special Projects.\n\n"
+                    f"¿Nos confirmas tu disponibilidad para recibir la llamada?"
+                )
             else:
                 msg_body = (
                     f"¡Hola {name}! 💻✨ Mañana es el gran día (**{formatted_date}** a las **{time_str}**) "
-                    f"para tu **Asesoría Virtual (Google Meet / Llamada)** con nuestro equipo de ANCLA Special Projects.\n\n"
+                    f"para tu **Asesoría Virtual** con nuestro equipo de ANCLA Special Projects.\n\n"
                     f"¿Nos confirmas tu disponibilidad para la sesión?"
                 )
 

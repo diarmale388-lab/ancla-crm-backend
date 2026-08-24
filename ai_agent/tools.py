@@ -8,6 +8,7 @@ El equipo del CRM Core implementará la lógica interna de la base de datos inye
 los handlers reales sin alterar la estructura del grafo de LangGraph.
 """
 
+import re
 from typing import Dict, Any, Optional
 from langchain_core.tools import tool
 
@@ -72,6 +73,35 @@ def is_colombian_holiday(target_date: dt_tz.date) -> bool:
     return target_date in holidays
 
 
+def _resolve_modality(raw_modalidad: Optional[str]) -> str:
+    """
+    Normaliza cualquier texto de modalidad al valor canónico exacto: 'PRESENCIAL', 'LLAMADA' o 'VIRTUAL'.
+
+    ⚠️ ARQUITECTURA DE MODALIDADES EXACTAS: LLAMADA es LLAMADA y VIRTUAL es VIRTUAL. Nunca se
+    debe plegar una preferencia de Llamada Telefónica dentro de la modalidad Virtual ni viceversa.
+
+    IMPORTANTE: se usan límites de palabra (\\b) para detectar "LLAMADA" porque la palabra
+    "VIDEOLLAMADA" contiene la subcadena "LLAMADA" y NO debe clasificarse como LLAMADA telefónica
+    (es Asesoría Virtual). Del mismo modo, "VIDEOLLAMADA"/"WHATSAPP"/"ZOOM" siempre priorizan VIRTUAL.
+    """
+    modality_str = str(raw_modalidad or "VIRTUAL").upper()
+
+    if any(w in modality_str for w in ["PRESENCIAL", "SHOWROOM", "VISITA", "ARMENIA", "FISICA", "FÍSICA"]):
+        return "PRESENCIAL"
+
+    # VIRTUAL tiene prioridad explícita sobre LLAMADA cuando el texto habla de videollamada/WhatsApp/Meet/Zoom.
+    if any(w in modality_str for w in ["VIDEOLLAMADA", "VIDEO LLAMADA", "WHATSAPP", "ZOOM", "MEET"]):
+        return "VIRTUAL"
+
+    if re.search(r'\bLLAMADA\b', modality_str) or "TELEFON" in modality_str or re.search(r'\bCALL\b', modality_str):
+        return "LLAMADA"
+
+    if "VIRTUAL" in modality_str:
+        return "VIRTUAL"
+
+    return "VIRTUAL"
+
+
 @tool
 async def fetch_user_context(phone: str) -> Dict[str, Any]:
     """
@@ -93,11 +123,14 @@ async def consultar_disponibilidad(
 ) -> Dict[str, Any]:
     """
     Consulta la disponibilidad de franjas horarias en la agenda comercial de ANCLA Special Projects.
-    Distingue automáticamente entre modalidad PRESENCIAL (Showroom Armenia) y VIRTUAL (Videollamada / Llamada).
+    Distingue automáticamente entre las 3 modalidades EXACTAS y NO intercambiables: PRESENCIAL
+    (Visita al Showroom Armenia), LLAMADA (Llamada Telefónica Personalizada) y VIRTUAL (Asesoría
+    Virtual por videollamada). LLAMADA y VIRTUAL comparten la misma agenda base (no presencial),
+    pero deben mantenerse como etiquetas de modalidad estrictamente distintas en la respuesta.
     
     Args:
         fecha_solicitada: Fecha deseada de la cita (Ej: '2026-08-21', 'hoy', 'mañana'). Por defecto 'hoy'.
-        modalidad: 'PRESENCIAL' (Showroom Armenia) o 'VIRTUAL' (Google Meet / Llamada). Por defecto 'VIRTUAL'.
+        modalidad: 'PRESENCIAL' (Showroom Armenia), 'LLAMADA' (Llamada Telefónica) o 'VIRTUAL' (Videollamada). Por defecto 'VIRTUAL'.
     """
     try:
         from collections import Counter
@@ -183,8 +216,8 @@ async def consultar_disponibilidad(
         except Exception as db_err:
             pass
 
-        modality_str = str(modalidad or "VIRTUAL").upper()
-        is_presencial = any(w in modality_str for w in ["PRESENCIAL", "SHOWROOM", "VISITA", "ARMENIA", "FISICA", "FÍSICA"])
+        target_modality = _resolve_modality(modalidad)
+        is_presencial = target_modality == "PRESENCIAL"
         max_capacity = 2 if is_presencial else 1
 
         # Si el día solicitado no tiene cupos disponibles o es Domingo, buscar automáticamente en los días siguientes
@@ -216,9 +249,10 @@ async def consultar_disponibilidad(
             if is_holiday and not holiday_override_slots:
                 continue
 
-            # Consultar si el día tiene bloques activos en la tabla Availability filtrados por la MODALIDAD (PRESENCIAL vs VIRTUAL)
+            # Consultar si el día tiene bloques activos en la tabla Availability filtrados por la MODALIDAD (PRESENCIAL vs VIRTUAL/LLAMADA)
+            # NOTA: LLAMADA reutiliza el mismo bloque de disponibilidad "VIRTUAL" (no requiere Showroom físico).
             user_avail_blocks = []
-            target_modality = "PRESENCIAL" if is_presencial else "VIRTUAL"
+            availability_bucket = "PRESENCIAL" if is_presencial else "VIRTUAL"
             slot_duration_min = 60 if is_presencial else 30
 
             try:
@@ -227,14 +261,14 @@ async def consultar_disponibilidad(
                 db_av = SessionLocal()
                 
                 # Leer parámetro de duración configurado en el CRM
-                sd_sett = db_av.query(SystemSetting).filter(SystemSetting.key == f"slot_duration_{target_modality.lower()}").first()
+                sd_sett = db_av.query(SystemSetting).filter(SystemSetting.key == f"slot_duration_{availability_bucket.lower()}").first()
                 if sd_sett and sd_sett.value and sd_sett.value.isdigit():
                     slot_duration_min = int(sd_sett.value)
 
                 # Consultar bloques específicos de la modalidad (deduplicando dinámicamente por horario)
                 all_blocks = db_av.query(Availability).filter(
                     Availability.day_of_week == weekday,
-                    Availability.modality == target_modality
+                    Availability.modality == availability_bucket
                 ).order_by(Availability.start_time).all()
                 
                 seen_times = set()
@@ -332,7 +366,7 @@ async def consultar_disponibilidad(
             interactive_rows.append({
                 "id": f"slot_{idx+1}",
                 "title": slot_str.split(" (")[0],
-                "description": f"{modalidad.capitalize()} - {target_date.strftime('%Y-%m-%d')}"
+                "description": f"{target_modality.capitalize()} - {target_date.strftime('%Y-%m-%d')}"
             })
 
         whatsapp_interactive_payload = {
@@ -346,7 +380,7 @@ async def consultar_disponibilidad(
                     "text": "📅 Horarios Disponibles ANCLA"
                 },
                 "body": {
-                    "text": f"Opciones de cita disponibles para el {target_date.strftime('%Y-%m-%d')} en modalidad {modalidad.upper()}:"
+                    "text": f"Opciones de cita disponibles para el {target_date.strftime('%Y-%m-%d')} en modalidad {target_modality}:"
                 },
                 "footer": {
                     "text": "ANCLA Special Projects"
@@ -376,7 +410,7 @@ async def consultar_disponibilidad(
             "fecha": target_date.strftime("%Y-%m-%d"),
             "fecha_texto_espanol": fecha_es,
             "frase_fecha": frase_sugerida,
-            "modalidad": modalidad,
+            "modalidad": target_modality,
             "horarios_disponibles": valid_slots,
             "max_capacidad_slot": max_capacity,
             "whatsapp_interactive_payload": whatsapp_interactive_payload,
@@ -421,14 +455,15 @@ async def save_appointment(
     email: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    [PUENTE CRM] Registra oficialmente una cita presencial o virtual en la base de datos del CRM.
+    [PUENTE CRM] Registra oficialmente una cita en la base de datos del CRM en una de las 3
+    modalidades EXACTAS y NO intercambiables: PRESENCIAL, LLAMADA o VIRTUAL.
     
     Args:
         phone: Número telefónico del cliente (ID del hilo).
         user_name: Nombre completo del cliente.
         date: Fecha acordada de la cita (Ej: "2026-08-10").
         time: Hora acordada de la cita (Ej: "10:00 AM").
-        modality: "PRESENCIAL" o "VIRTUAL".
+        modality: "PRESENCIAL", "LLAMADA" o "VIRTUAL". LLAMADA y VIRTUAL son modalidades distintas.
         email: Correo electrónico del cliente (opcional).
         
     Returns:
@@ -465,7 +500,9 @@ async def save_appointment(
                 db.add(contact)
                 db.commit()
                 
-            target_modality = "VIRTUAL" if "VIRTUAL" in modality.upper() or "LLAMADA" in modality.upper() or "MEET" in modality.upper() else "PRESENCIAL"
+            # ⚠️ ARQUITECTURA DE MODALIDADES EXACTAS: LLAMADA es LLAMADA y VIRTUAL es VIRTUAL.
+            # Prohibido plegar una modalidad de LLAMADA dentro de VIRTUAL (ver _resolve_modality).
+            target_modality = _resolve_modality(modality)
             contact.scheduling_state = target_modality
             contact_id = contact.id
             assigned_uid = contact.assigned_user_id
@@ -495,6 +532,17 @@ async def save_appointment(
                     existing_same_day.appointment_type = target_modality
                     existing_same_day.datetime = appt_datetime
                     existing_same_day.notes = f"Cita actualizada a {target_modality} por Sofi AI para {user_name}"
+
+                    # Generar sala de Google Meet SOLO si la modalidad final es VIRTUAL (nunca LLAMADA/PRESENCIAL)
+                    meet_url_update = None
+                    if target_modality == "VIRTUAL":
+                        try:
+                            from app.services.google_integration import create_google_calendar_event
+                            _, generated_meet = await create_google_calendar_event(db, existing_same_day, contact)
+                            meet_url_update = generated_meet
+                        except Exception:
+                            pass
+
                     db.add(existing_same_day)
                     db.commit()
                     saved_id = str(existing_same_day.id)
@@ -506,6 +554,7 @@ async def save_appointment(
                         "phone": phone,
                         "user_name": user_name,
                         "modality": target_modality,
+                        "google_meet_url": meet_url_update,
                         "message": f"Cita actualizada exitosamente a modalidad {target_modality} para el {date} a las {time}."
                     }
                 else:
@@ -518,7 +567,7 @@ async def save_appointment(
                         "datetime": appt_datetime.isoformat(),
                         "phone": phone,
                         "user_name": user_name,
-                        "modality": modality,
+                        "modality": target_modality,
                         "message": "⚠️ ATENCIÓN: La cita de este cliente YA estaba registrada previamente en la agenda para esta misma fecha y modalidad. PROHIBIDO ENVIAR UN SEGUNDO MENSAJE DE CONFIRMACIÓN AL CLIENTE."
                     }
 
@@ -551,7 +600,7 @@ async def save_appointment(
             db.commit()
             db.refresh(new_appt)
 
-            # Generar sala de Google Meet si es Virtual
+            # Generar sala de Google Meet SOLO si la modalidad final es VIRTUAL (nunca LLAMADA/PRESENCIAL)
             meet_url = None
             if target_modality == "VIRTUAL":
                 try:
@@ -572,6 +621,89 @@ async def save_appointment(
                 "modality": target_modality,
                 "google_meet_url": meet_url,
                 "message": f"Cita {target_modality} agendada exitosamente en BD para el {date} a las {time}."
+            }
+        finally:
+            db.close()
+    except Exception as e:
+        return {
+            "status": "error",
+            "success": False,
+            "error": str(e)
+        }
+
+
+@tool
+async def cancel_appointment(phone: str, reason: str = "Cancelada a solicitud del cliente") -> Dict[str, Any]:
+    """
+    [PUENTE CRM] Cancela oficialmente la cita activa (CONFIRMED o PENDING) de un cliente en la base de datos.
+
+    ⚠️ OBLIGATORIO invocar esta herramienta SIEMPRE que el cliente exprese una negación o desistimiento
+    sobre una cita ya agendada (ej: "No, gracias", "No puedo asistir", "Cancela la cita", "No voy a ir",
+    "Ya no estoy interesado"). NUNCA confirmes ni des por reservada una cita ante una negación del cliente.
+
+    Args:
+        phone: Número telefónico del cliente (ID del hilo).
+        reason: Motivo de la cancelación indicado o inferido de la conversación.
+
+    Returns:
+        Confirmación de la cancelación con el ID de la cita cancelada.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.models.base import Contact, Appointment
+
+        db = SessionLocal()
+        try:
+            contact = db.query(Contact).filter(
+                (Contact.phone == phone) | (Contact.phone == f"+{phone}") | (Contact.phone.like(f"%{phone[-10:]}%"))
+            ).first()
+
+            if not contact:
+                return {
+                    "status": "error",
+                    "success": False,
+                    "error": "No se encontró ningún cliente registrado con ese número de teléfono."
+                }
+
+            active_appts = db.query(Appointment).filter(
+                Appointment.contact_id == contact.id,
+                Appointment.status.in_(["CONFIRMED", "PENDING"])
+            ).all()
+
+            if not active_appts:
+                return {
+                    "status": "no_active_appointment",
+                    "success": False,
+                    "message": "El cliente no tiene ninguna cita activa (CONFIRMED o PENDING) para cancelar."
+                }
+
+            cancelled_ids = []
+            for appt in active_appts:
+                appt.status = "CANCELLED"
+                appt.notes = f"{reason} (Cancelada por Sofi AI)"
+                db.add(appt)
+                cancelled_ids.append(str(appt.id))
+
+                # Cancelación best-effort del evento real en Google Calendar si existe vínculo
+                if appt.google_event_id:
+                    try:
+                        from app.services.google_integration import cancel_google_calendar_event
+                        await cancel_google_calendar_event(db, appt)
+                    except Exception:
+                        pass
+
+            contact.scheduling_state = "CANCELADO"
+            db.add(contact)
+            db.commit()
+
+            return {
+                "status": "success",
+                "success": True,
+                "message": "Cita cancelada exitosamente en BD",
+                "cancelled_appointment_id": cancelled_ids[0],
+                "cancelled_appointment_ids": cancelled_ids,
+                "phone": phone,
+                "reason": reason
             }
         finally:
             db.close()
@@ -855,9 +987,9 @@ ALL_AI_TOOLS = [
     fetch_user_context,
     consultar_disponibilidad,
     save_appointment,
+    cancel_appointment,
     update_lead_status,
     request_human_handover,
     generar_y_enviar_propuesta_pdf,
     solicitar_autorizacion_cita_nocturna
 ]
-

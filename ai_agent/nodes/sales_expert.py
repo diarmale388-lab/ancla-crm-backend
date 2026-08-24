@@ -42,11 +42,22 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
     
     # Formatear contexto de formulario de Meta Ads si está presente
     lead_context_str = ""
+    modalidad_preferida_str = "NO_ESPECIFICADA"
     if meta_ads_lead_data and isinstance(meta_ads_lead_data, dict):
         lead_context_str = "\n[DATOS EXTRAÍDOS DE FORMULARIO META ADS DE ESTE CLIENTE]:\n"
         for k, v in meta_ads_lead_data.items():
             lead_context_str += f"- {k}: {v}\n"
         lead_context_str += "⚠️ REGLA: Reconoce estos datos y no le vuelvas a preguntar lo que el cliente ya respondió en el formulario."
+
+        # ⚠️ ARQUITECTURA DE MODALIDADES EXACTAS: propagar la preferencia LLAMADA/VIRTUAL/PRESENCIAL
+        # extraída del formulario Meta Ads (Regla 25 de SALES_EXPERT_PROMPT) sin volver a preguntarla.
+        raw_modalidad = str(meta_ads_lead_data.get("modalidad_preferida") or "").upper().strip()
+        if "LLAMADA" in raw_modalidad or "TELEFON" in raw_modalidad:
+            modalidad_preferida_str = "LLAMADA"
+        elif "PRESENCIAL" in raw_modalidad or "SHOWROOM" in raw_modalidad:
+            modalidad_preferida_str = "PRESENCIAL"
+        elif "VIRTUAL" in raw_modalidad:
+            modalidad_preferida_str = "VIRTUAL"
 
     # Extracción de estado relacional de la BD
     contact_modality = state.get("metadata", {}).get("scheduling_state") or "NO_DEFINIDA"
@@ -89,12 +100,14 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
         f"- Teléfono: {phone}\n"
         f"- Nombre cliente: {user_name if user_name else 'No especificado aún'}\n"
         f"- Modalidad elegida en BD: {contact_modality}\n"
+        f"- Modalidad preferida (Formulario Meta Ads, ver Regla 25): {modalidad_preferida_str}\n"
         f"- ¿Posee lote propio?: {contact_has_land}\n"
         f"- Ubicación / Ciudad: {contact_location}\n"
         f"- Cita actualmente agendada: {contact_active_appointment}\n"
         f"- Fecha Actual (Colombia): {hoy_es} ({current_time_str})\n"
         f"- Mañana es: {manana_es}\n"
         f"⚠️ PROHIBIDO cambiar el día de la semana de una fecha. NUNCA OFREZCAS DÍAS NI HORAS ANTERIORES A ESTA FECHA/HORA.\n"
+        f"⚠️ RECUERDA: LLAMADA es LLAMADA y VIRTUAL es VIRTUAL (modalidades distintas y no intercambiables). PROHIBIDO imprimir cualquier link de Google Meet.\n"
         f"{approved_guidelines_str}"
         f"{lead_context_str}"
         f"{interaction_instruction}"

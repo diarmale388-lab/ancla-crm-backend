@@ -9,9 +9,19 @@ from app.services.whatsapp import whatsapp_service
 
 logger = logging.getLogger("reminder_service")
 BOGOTA_TZ = zoneinfo.ZoneInfo("America/Bogota")
+
+# LEY 1 (Contrato Inviolable de Sofi AI): ERRADICACIÓN TOTAL de enlaces de Google Meet. Esta línea
+# es SIEMPRE Y EXCLUSIVAMENTE el texto de acceso para Asesoría Virtual, sin importar si existe un
+# `google_meet_url` real en BD. Prohibido imprimir cualquier link de Meet en mensajes al cliente.
 VIRTUAL_NO_MEET_LINE = (
     "📲 Modalidad: Asesoría Virtual (Nuestro equipo se comunicará contigo puntualmente "
     "por este medio para iniciar la videollamada)."
+)
+
+# Línea de acceso para la modalidad LLAMADA (distinta e independiente de VIRTUAL).
+LLAMADA_ACCESS_LINE = (
+    "📞 Modalidad: Llamada Telefónica Comercial (Nuestro equipo de expertos te llamará "
+    "puntualmente a este mismo número)."
 )
 
 
@@ -29,6 +39,19 @@ def format_spanish_date(dt: datetime) -> str:
     day_name = days[dt.weekday()]
     month_name = months[dt.month - 1]
     return f"{day_name} {dt.day} de {month_name}"
+
+
+def _resolve_modality_bucket(appointment_type: str) -> str:
+    """
+    Normaliza el appointment_type de BD a una de las 3 modalidades EXACTAS y no intercambiables:
+    'PRESENCIAL', 'LLAMADA' o 'VIRTUAL'. Ver arquitectura de modalidades en ai_agent/tools.py.
+    """
+    modality_str = (appointment_type or "VIRTUAL").upper()
+    if any(w in modality_str for w in ["PRESENCIAL", "SHOWROOM", "VISITA", "ARMENIA"]):
+        return "PRESENCIAL"
+    if any(w in modality_str for w in ["LLAMADA", "TELEFON", "CALL"]):
+        return "LLAMADA"
+    return "VIRTUAL"
 
 
 async def process_appointment_reminders(db: Session):
@@ -54,8 +77,10 @@ async def process_appointment_reminders(db: Session):
         date_str = format_spanish_date(appt.datetime)
         lot_city = (contact.lot_city or "").strip()
         project_context = f"para tu proyecto en {lot_city}" if lot_city else "para tu proyecto de casa modular"
-        meet_url = (appt.google_meet_url or "").strip() or None
-        is_virtual = (appt.appointment_type or "VIRTUAL").upper() == "VIRTUAL"
+        modality_bucket = _resolve_modality_bucket(appt.appointment_type)
+        is_virtual = modality_bucket == "VIRTUAL"
+        is_llamada = modality_bucket == "LLAMADA"
+        is_presencial = modality_bucket == "PRESENCIAL"
 
         # 1. VENTANA 24 HORAS
         if 22 * 3600 <= total_seconds <= 26 * 3600 and not appt.reminder_24h_sent:
@@ -63,14 +88,19 @@ async def process_appointment_reminders(db: Session):
             if appt.created_at and (now_bogota - appt.created_at.replace(tzinfo=None)) <= timedelta(hours=3):
                 pass
             elif is_virtual:
-                link_line = f"📲 Tu enlace de Google Meet: {meet_url}\n\n" if meet_url else f"{VIRTUAL_NO_MEET_LINE}\n\n"
                 msg_text = (
                     f"¡Hola {name}! 👋 Te recordamos que mañana {date_str} a las {time_str} tenemos reservada tu *Asesoría Virtual* {project_context} 🏡✨.\n\n"
                     f"📍 Nuestro equipo te presentará en pantalla los planos de distribución, renders reales y la cotización personalizada puesta en tu lote.\n\n"
-                    f"{link_line}"
+                    f"{VIRTUAL_NO_MEET_LINE}\n\n"
                     f"¡Nos vemos mañana puntualmente!"
                 )
-            elif not is_virtual:
+            elif is_llamada:
+                msg_text = (
+                    f"¡Hola {name}! 👋 Te recordamos que mañana {date_str} a las {time_str} tenemos reservada tu *Llamada Telefónica Comercial* {project_context} 🏡✨.\n\n"
+                    f"📞 Nuestro equipo de expertos te llamará puntualmente a este número para brindarte toda la información técnica y la cotización de tu proyecto.\n\n"
+                    f"¡Nos comunicamos contigo mañana!"
+                )
+            elif is_presencial:
                 msg_text = (
                     f"¡Hola {name}! 👋 Te recordamos que mañana {date_str} a las {time_str} tenemos reservada tu *Visita al Showroom en Armenia* (Avenida Centenario, frente a Pan y Miel) 🏡✨.\n\n"
                     f"🚗 Contamos con parqueadero privado y gratuito. Enlaces para llegar fácilmente:\n"
@@ -100,14 +130,16 @@ async def process_appointment_reminders(db: Session):
         # 2. VENTANA 2 HORAS
         if 90 * 60 <= total_seconds <= 150 * 60 and not appt.reminder_2h_sent:
             if is_virtual:
-                link_line = (
-                    f"Puedes conectarte fácilmente desde tu celular o computador aquí:\n📲 {meet_url}\n\n"
-                    if meet_url else f"{VIRTUAL_NO_MEET_LINE}\n\n"
-                )
                 msg_text = (
                     f"¡Hola {name}! ⏰ En 2 horas iniciamos tu *Asesoría Virtual* ({time_str}) {project_context} 🏡.\n\n"
-                    f"{link_line}"
+                    f"{VIRTUAL_NO_MEET_LINE}\n\n"
                     f"¿Nos confirmas si todo en orden para tu conexión? 😊"
+                )
+            elif is_llamada:
+                msg_text = (
+                    f"¡Hola {name}! ⏰ En 2 horas te llamaremos para tu *Llamada Telefónica Comercial* ({time_str}) {project_context} 🏡.\n\n"
+                    f"{LLAMADA_ACCESS_LINE}\n\n"
+                    f"¿Nos confirmas que estarás disponible para recibir la llamada? 😊"
                 )
             else:
                 msg_text = (
@@ -136,13 +168,21 @@ async def process_appointment_reminders(db: Session):
 
         # 3. VENTANA 15 MINUTOS
         if 5 * 60 <= total_seconds <= 20 * 60 and not appt.reminder_15m_sent:
+            msg_text = None
             if is_virtual:
-                link_line = f"📲 {meet_url}\n\n" if meet_url else f"{VIRTUAL_NO_MEET_LINE}\n\n"
                 msg_text = (
                     f"¡Hola {name}! 👋 En 15 minutos nuestro equipo de expertos estará listo para atenderte en tu Asesoría Virtual:\n"
-                    f"{link_line}"
+                    f"{VIRTUAL_NO_MEET_LINE}\n\n"
                     f"¡Nos vemos en breve para revisar los planos de tu casa modular! 🏡"
                 )
+            elif is_llamada:
+                msg_text = (
+                    f"¡Hola {name}! 👋 En 15 minutos nuestro equipo de expertos te llamará para tu Llamada Telefónica Comercial:\n"
+                    f"{LLAMADA_ACCESS_LINE}\n\n"
+                    f"¡Prepárate para revisar la información de tu casa modular! 🏡"
+                )
+
+            if msg_text:
                 try:
                     res = await whatsapp_service.send_text_message(contact.phone, msg_text, db=db)
                     if res:

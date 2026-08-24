@@ -134,8 +134,15 @@ def _get_advisor_credentials(db: Session, user_id: int) -> Credentials:
 
 async def create_google_calendar_event(db: Session, appointment: Appointment, contact: Contact) -> tuple[Optional[str], Optional[str]]:
     """
-    Crea un evento de Google Calendar real con enlace dinámico de Google Meet.
-    Si Liliana compartió su calendario o si se usa Service Account, genera sala única.
+    Crea un evento de Google Calendar real.
+
+    LEY 1 (Contrato Inviolable de Sofi AI) — ERRADICACIÓN TOTAL DE MEET POR CUENTA DE SERVICIO:
+    Está PROHIBIDO solicitar o generar enlaces de Google Meet (`conferenceData`) usando la Cuenta
+    de Servicio. Únicamente se solicita `conferenceData` cuando existen credenciales OAuth
+    PERSONALES de un asesor real (Dirección Comercial conectó su propia cuenta de Google Calendar).
+    Mientras Dirección no haya conectado OAuth personal, `google_meet_url` DEBE permanecer
+    SIEMPRE `None`, sin importar lo que retorne la API.
+
     Retorna (event_id, google_meet_url).
     """
     import uuid
@@ -145,10 +152,13 @@ async def create_google_calendar_event(db: Session, appointment: Appointment, co
     creds = None
     if user_id:
         creds = _get_advisor_credentials(db, user_id)
-        
-    # 2. Si no hay credenciales de asesor, usar cuenta de servicio
+
+    # Solo se considera "OAuth personal" cuando las credenciales provienen de un asesor real.
+    is_personal_oauth = creds is not None
+
+    # 2. Si no hay credenciales de asesor, usar cuenta de servicio (JAMÁS genera Meet, ver LEY 1 arriba)
     if not creds:
-        logger.info("No se encontraron credenciales OAuth de asesor. Recurriendo a Cuenta de Servicio.")
+        logger.info("No se encontraron credenciales OAuth de asesor. Recurriendo a Cuenta de Servicio (sin generación de Meet).")
         creds = _get_google_credentials()
         
     # Estructura del evento según la Google Calendar API
@@ -169,7 +179,7 @@ async def create_google_calendar_event(db: Session, appointment: Appointment, co
     event_body = {
         "summary": f"Asesoría ANCLA: {contact.first_name or ''} {contact.last_name or ''} ({contact.lot_city or 'Vivienda'})".strip(),
         "description": (
-            f"Asesoría Virtual ANCLA Special Projects.\n"
+            f"Asesoría ANCLA Special Projects.\n"
             f"Cliente: {contact.first_name or ''} {contact.last_name or ''}\n"
             f"Teléfono: {contact.phone}\n"
             f"Municipio: {contact.lot_city or 'Por definir'}\n"
@@ -184,18 +194,21 @@ async def create_google_calendar_event(db: Session, appointment: Appointment, co
             "timeZone": "America/Bogota"
         },
         "attendees": attendees_list,
-        "conferenceData": {
+        "reminders": {
+            "useDefault": True
+        }
+    }
+
+    # LEY 1: conferenceData (Google Meet) SOLO se solicita con OAuth personal real del asesor.
+    if is_personal_oauth:
+        event_body["conferenceData"] = {
             "createRequest": {
                 "requestId": request_id,
                 "conferenceSolutionKey": {
                     "type": "hangoutsMeet"
                 }
             }
-        },
-        "reminders": {
-            "useDefault": True
         }
-    }
 
     meet_url = None
     event_id = None
@@ -208,18 +221,24 @@ async def create_google_calendar_event(db: Session, appointment: Appointment, co
             event = service.events().insert(
                 calendarId=calendar_id,
                 body=event_body,
-                conferenceDataVersion=1,
+                conferenceDataVersion=1 if is_personal_oauth else 0,
                 sendUpdates='all'
             ).execute()
             
             event_id = event.get('id')
-            meet_url = event.get('hangoutLink')
-            if not meet_url and 'conferenceData' in event:
-                entry_points = event['conferenceData'].get('entryPoints', [])
-                for ep in entry_points:
-                    if ep.get('entryPointType') == 'video':
-                        meet_url = ep.get('uri')
-                        break
+
+            # LEY 1: aunque la API devolviera un enlace, se descarta por completo si no proviene
+            # de OAuth personal del asesor (Cuenta de Servicio JAMÁS puede exponer un Meet real).
+            if is_personal_oauth:
+                meet_url = event.get('hangoutLink')
+                if not meet_url and 'conferenceData' in event:
+                    entry_points = event['conferenceData'].get('entryPoints', [])
+                    for ep in entry_points:
+                        if ep.get('entryPointType') == 'video':
+                            meet_url = ep.get('uri')
+                            break
+            else:
+                meet_url = None
             
             logger.info(f"Evento real creado en Google Calendar con ID: {event_id} | Meet: {meet_url}")
             print(f"[GOOGLE CALENDAR REAL] Cita agendada exitosamente. Evento ID: {event_id} | Meet: {meet_url}")
@@ -244,6 +263,36 @@ async def create_google_calendar_event(db: Session, appointment: Appointment, co
     db.commit()
 
     return event_id, meet_url
+
+
+async def cancel_google_calendar_event(db: Session, appointment: Appointment) -> bool:
+    """
+    Cancela (elimina) de forma best-effort el evento real en Google Calendar vinculado a la cita.
+    Si el evento era solo una simulación local (sin credenciales conectadas) o si Calendar aún
+    no está autorizado, no falla: simplemente no hay nada real que cancelar en Google.
+    Retorna True si se eliminó el evento remoto, False en cualquier otro caso (nunca lanza excepción).
+    """
+    event_id = appointment.google_event_id
+    if not event_id or event_id.startswith("gcal_event_"):
+        # Evento simulado localmente (Dirección aún no conectó Calendar): nada que cancelar en Google.
+        return False
+
+    user_id = appointment.user_id
+    creds = _get_advisor_credentials(db, user_id) if user_id else None
+    if not creds:
+        creds = _get_google_credentials()
+    if not creds:
+        return False
+
+    try:
+        service = build('calendar', 'v3', credentials=creds)
+        calendar_id = os.getenv("LILIANA_CALENDAR_ID", "primary")
+        service.events().delete(calendarId=calendar_id, eventId=event_id, sendUpdates='all').execute()
+        logger.info(f"Evento de Google Calendar {event_id} cancelado exitosamente.")
+        return True
+    except Exception as e:
+        logger.info(f"No se pudo cancelar el evento remoto {event_id} en Google Calendar (puede ya no existir): {e}")
+        return False
 
 
 async def upload_lead_report_to_google_drive(db: Session, contact: Contact, appointment: Appointment):
