@@ -789,7 +789,7 @@ Conversación:
     return {"status": "success", "summary": summary_text}
 
 class BitacoraCreatePayload(BaseModel):
-    note_type: str = "LLAMADA" # LLAMADA, VIRTUAL, SHOWROOM, SEGUIMIENTO
+    note_type: str = "LLAMADA" # LLAMADA, VIRTUAL, SHOWROOM, VISITA_TERRENO, SEGUIMIENTO
     content: str
     author_name: Optional[str] = "Liliana / Asesor"
     call_result: Optional[str] = None
@@ -797,6 +797,8 @@ class BitacoraCreatePayload(BaseModel):
     detected_objection: Optional[str] = None
     next_action: Optional[str] = None
     next_action_date: Optional[str] = None
+    lot_status: Optional[str] = None
+    interest_product: Optional[str] = None
 
 @router.post("/{contact_id}/bitacora")
 async def add_bitacora_note(
@@ -806,7 +808,7 @@ async def add_bitacora_note(
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
-    Agrega una nota estructurada a la bitácora comercial de atención del asesor.
+    Agrega una nota estructurada a la bitácora comercial de atención del asesor y sincroniza campos maestros del contacto.
     """
     from app.models.base import AdvisorBitacoraNote
     contact = db.query(Contact).filter(Contact.id == contact_id).first()
@@ -814,6 +816,13 @@ async def add_bitacora_note(
         raise HTTPException(status_code=404, detail="Contacto no encontrado")
 
     real_author = current_user.full_name or payload.author_name or "Asesor Comercial"
+
+    # Sincronización inteligente de campos de perfil (Pestaña 1) si vienen en el payload
+    if payload.lot_status:
+        contact.lot_status = payload.lot_status
+    if payload.interest_product:
+        contact.interest_product = payload.interest_product
+    db.add(contact)
 
     note = AdvisorBitacoraNote(
         contact_id=contact.id,
