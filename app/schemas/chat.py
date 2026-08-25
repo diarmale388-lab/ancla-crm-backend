@@ -23,6 +23,18 @@ class MessageResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class BitacoraNoteMini(BaseModel):
+    id: Optional[int] = None
+    note_type: Optional[str] = None
+    content: Optional[str] = None
+    next_action: Optional[str] = None
+    next_action_date: Optional[str] = None
+    author_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
 class ContactChatResponse(BaseModel):
     id: int
     first_name: Optional[str] = None
@@ -31,6 +43,7 @@ class ContactChatResponse(BaseModel):
     phone: str
     source: Optional[str] = None
     assigned_user_id: Optional[int] = None
+    assigned_user_name: Optional[str] = None
     chatbot_enabled: bool
     avatar_url: Optional[str] = None
     interest_product: Optional[str] = None
@@ -40,6 +53,12 @@ class ContactChatResponse(BaseModel):
     lot_status: Optional[str] = None
     lot_city: Optional[str] = None
     client_type: Optional[str] = None
+    created_at: Optional[datetime] = None
+    quoted_value: Optional[float] = None
+    estimated_budget: Optional[float] = None
+    preferred_contact_method: Optional[str] = None
+    advisor_status: Optional[str] = None
+    last_bitacora_note: Optional[BitacoraNoteMini] = None
     last_message_content: Optional[str] = None
     last_message_time: Optional[datetime] = None
     last_message_sender: Optional[str] = None
