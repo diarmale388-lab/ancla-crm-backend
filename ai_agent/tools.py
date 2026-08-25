@@ -637,9 +637,8 @@ async def cancel_appointment(phone: str, reason: str = "Cancelada a solicitud de
     """
     [PUENTE CRM] Cancela oficialmente la cita activa (CONFIRMED o PENDING) de un cliente en la base de datos.
 
-    ⚠️ OBLIGATORIO invocar esta herramienta SIEMPRE que el cliente exprese una negación o desistimiento
-    sobre una cita ya agendada (ej: "No, gracias", "No puedo asistir", "Cancela la cita", "No voy a ir",
-    "Ya no estoy interesado"). NUNCA confirmes ni des por reservada una cita ante una negación del cliente.
+    ⚠️ OBLIGATORIO invocar esta herramienta ÚNICAMENTE cuando el cliente exprese una orden o deseo EXPLÍCITO e INEQUÍVOCO de cancelar o no asistir a su cita (ej: "Cancela la cita", "Cancéleme", "No voy a poder asistir", "No quiero la cita", "Ya no estoy interesado").
+    ⛔ TERMINANTEMENTE PROHIBIDO invocar esta herramienta si el cliente solo usa muletillas conversacionales como "No, la verdad necesito...", expresa dudas sobre precios o pide modelos más rápidos/económicos. En esos casos NUNCA canceles la cita; asesóralo manteniendo la cita programada.
 
     Args:
         phone: Número telefónico del cliente (ID del hilo).
