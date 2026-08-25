@@ -643,21 +643,10 @@ async def cancel_appointment(phone: str, reason: str = "Cancelada a solicitud de
         phone: Número telefónico del cliente.
         reason: Motivo de la cancelación.
     """
-    # ── GUARDIA PRAGMÁTICA DE DOBLE CERROJO EN PYTHON ─────────────────
-    from ai_agent.nodes.pragmatic_guard import validate_cancellation_guard
-    is_allowed, guard_reason = validate_cancellation_guard(reason)
-    if not is_allowed:
-        return {
-            "status": "cancellation_blocked",
-            "success": False,
-            "blocked_by_guard": True,
-            "message": f"Cancelación RECHAZADA por Guardia Pragmática: {guard_reason}. La cita permanece CONFIRMADA. Asesora al cliente normalmente sin cancelar.",
-            "phone": phone
-        }
-    # ──────────────────────────────────────────────────────────────────
     try:
         from app.database import SessionLocal
-        from app.models.base import Contact, Appointment
+        from app.models.base import Contact, Appointment, Message, SenderType
+        from ai_agent.nodes.pragmatic_guard import validate_cancellation_guard
 
         db = SessionLocal()
         try:
@@ -671,6 +660,25 @@ async def cancel_appointment(phone: str, reason: str = "Cancelada a solicitud de
                     "success": False,
                     "error": "No se encontró ningún cliente registrado con ese número de teléfono."
                 }
+
+            # ── GUARDIA PRAGMÁTICA DE DOBLE CERROJO EN PYTHON ─────────────────
+            # Buscar el último mensaje textual entrante del cliente en la BD para validar su intención real
+            last_client_msg = db.query(Message).filter(
+                Message.contact_id == contact.id,
+                Message.sender_type.in_([SenderType.CONTACT, "contact", "CONTACT"])
+            ).order_by(Message.id.desc()).first()
+
+            text_to_validate = (last_client_msg.content if (last_client_msg and last_client_msg.content) else reason)
+            is_allowed, guard_reason = validate_cancellation_guard(text_to_validate)
+            if not is_allowed:
+                return {
+                    "status": "cancellation_blocked",
+                    "success": False,
+                    "blocked_by_guard": True,
+                    "message": f"Cancelación RECHAZADA por Guardia Pragmática: {guard_reason}. La cita permanece CONFIRMADA. Asesora al cliente normalmente sin cancelar.",
+                    "phone": phone
+                }
+            # ──────────────────────────────────────────────────────────────────
 
             active_appts = db.query(Appointment).filter(
                 Appointment.contact_id == contact.id,

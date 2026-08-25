@@ -109,6 +109,34 @@ class TestHybridArchitectureSofiAI(unittest.TestCase):
         self.assertIn("Showroom ANCLA Special Projects", content_p)
         self.assertIn("Armenia", content_p)
 
+        # 5. Probar estado no_active_appointment
+        state_no_appt = {
+            "user_name": "Lorena Soto",
+            "messages": [
+                ToolMessage(
+                    name="cancel_appointment",
+                    content='{"status": "no_active_appointment", "success": false}',
+                    tool_call_id="call_no_appt"
+                )
+            ]
+        }
+        res_no = asyncio.run(deterministic_confirmation_node(state_no_appt))
+        self.assertIn("no tienes ninguna cita activa", res_no["messages"][0].content)
+
+        # 6. Probar estado error
+        state_err = {
+            "user_name": "Lorena Soto",
+            "messages": [
+                ToolMessage(
+                    name="save_appointment",
+                    content='{"status": "error", "success": false, "error": "Horario ocupado"}',
+                    tool_call_id="call_err"
+                )
+            ]
+        }
+        res_err = asyncio.run(deterministic_confirmation_node(state_err))
+        self.assertIn("inconveniente", res_err["messages"][0].content)
+
     def test_03_graph_compilation_and_conditional_edges(self):
         """Verifica que el grafo de LangGraph compile con el nuevo nodo determinista."""
         from ai_agent.graph import build_sofi_graph, route_after_tool_execution
@@ -119,14 +147,20 @@ class TestHybridArchitectureSofiAI(unittest.TestCase):
 
         # Probar la arista condicional post-tool
         state_save = {
-            "messages": [ToolMessage(name="save_appointment", content='{}', tool_call_id="1")]
+            "messages": [ToolMessage(name="save_appointment", content='{"status": "success"}', tool_call_id="1")]
         }
         self.assertEqual(route_after_tool_execution(state_save), "deterministic_confirmation_node")
 
         state_cancel = {
-            "messages": [ToolMessage(name="cancel_appointment", content='{}', tool_call_id="2")]
+            "messages": [ToolMessage(name="cancel_appointment", content='{"status": "success"}', tool_call_id="2")]
         }
         self.assertEqual(route_after_tool_execution(state_cancel), "deterministic_confirmation_node")
+
+        # Cancelación bloqueada por guardia debe regresar a sales_expert_node para responder duda del cliente
+        state_cancel_blocked = {
+            "messages": [ToolMessage(name="cancel_appointment", content='{"status": "cancellation_blocked", "blocked_by_guard": true}', tool_call_id="2b")]
+        }
+        self.assertEqual(route_after_tool_execution(state_cancel_blocked), "sales_expert_node")
 
         state_consult = {
             "messages": [ToolMessage(name="consultar_disponibilidad", content='{}', tool_call_id="3")]

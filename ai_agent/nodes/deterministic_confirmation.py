@@ -114,19 +114,34 @@ async def deterministic_confirmation_node(state: AgentState) -> Dict[str, Any]:
                     f"1. Los planos y distribución arquitectónica del modelo que elijas (Flex Home o Cápsulas Living).\n"
                     f"2. Renders y fotos reales de los acabados interiores.\n"
                     f"3. La cotización personalizada y detallada puesta directamente en tu lote.\n\n"
-                    f"📲 **Modalidad:** Asesoría Virtual (Nuestro equipo se comunicará contigo puntualmente por este medio para iniciar la videollamada). ¡Nos vemos pronto! 🏡✨"
+                    f"📲 Modalidad: Asesoría Virtual (Nuestro equipo se comunicará contigo puntualmente por este medio para iniciar la videollamada). ¡Nos vemos pronto! 🏡✨"
                 )
+            return {"messages": [AIMessage(content=msg)]}
+
+        if tool_status == "error" or not data.get("success", True):
+            err_msg = data.get("error") or "inconveniente técnico temporal"
+            msg = (
+                f"Disculpa la molestia, en este momento tuvimos un inconveniente al agendar tu cita ({err_msg}). "
+                f"Uno de nuestros asesores comerciales se comunicará contigo en breve para asistirte personalmente. 🙌"
+            )
             return {"messages": [AIMessage(content=msg)]}
             
     # ─────────────────────────────────────────────────────────────
     # CASO 2: cancel_appointment
     # ─────────────────────────────────────────────────────────────
     elif tool_name == "cancel_appointment":
-        if tool_status == "cancellation_blocked" or data.get("blocked_by_guard"):
-            # Si fue bloqueada por guardia, dejamos que el LLM asesore o devolvemos mensaje cálido
+        if tool_status == "no_active_appointment":
+            greeting = f" {name_display}" if name_display else ""
             msg = (
-                f"¡Con gusto! Cuentas con nosotros para revisar la mejor alternativa para tu lote y presupuesto. "
-                f"Tu cita sigue activa para que nuestros especialistas te presenten las opciones más eficientes. ¿Deseas consultar algún detalle específico?"
+                f"¡Hola{greeting}! Te confirmamos que actualmente no tienes ninguna cita activa programada en nuestra agenda. "
+                f"Si deseas coordinar una nueva cita con nuestro equipo de expertos, con todo gusto te compartimos los horarios disponibles. 🏡✨"
+            )
+            return {"messages": [AIMessage(content=msg)]}
+
+        if tool_status == "error":
+            msg = (
+                f"Disculpa la molestia, tuvimos un inconveniente al procesar tu solicitud. "
+                f"Uno de nuestros asesores verificará el estado de tu cita en el sistema para brindarte atención inmediata."
             )
             return {"messages": [AIMessage(content=msg)]}
             

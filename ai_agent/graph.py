@@ -98,6 +98,18 @@ def route_after_tool_execution(state: AgentState) -> Literal["deterministic_conf
             
     if last_tool_msg:
         tool_name = getattr(last_tool_msg, "name", "")
+        content_raw = getattr(last_tool_msg, "content", "")
+        try:
+            import json
+            data = json.loads(content_raw) if isinstance(content_raw, str) else content_raw
+        except Exception:
+            data = {}
+
+        # Si la cancelación fue bloqueada por guardia pragmática (muletilla del cliente),
+        # volvemos a sales_expert_node para que Claude asesore su duda con calidez natural
+        if tool_name == "cancel_appointment" and (data.get("status") == "cancellation_blocked" or data.get("blocked_by_guard")):
+            return "sales_expert_node"
+
         if tool_name in ("save_appointment", "cancel_appointment"):
             return "deterministic_confirmation_node"
             
