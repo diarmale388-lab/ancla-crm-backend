@@ -1363,11 +1363,11 @@ async def appointment_24h_reminder_cron_job(ctx):
 
 class WorkerSettings:
     """Configuración que lee arq para lanzar el Worker"""
-    functions = [process_whatsapp_message, crm_daily_backup_job, autopilot_sweeper_job, morning_8am_broadcast_job, appointment_2h_reminder_cron_job, appointment_24h_reminder_cron_job]
+    # NOTA: Los recordatorios de citas son gestionados exclusivamente por reminder_service.py
+    # para evitar duplicidad de envíos y garantizar el uso de banderas booleanas en BD.
+    functions = [process_whatsapp_message, crm_daily_backup_job, autopilot_sweeper_job, morning_8am_broadcast_job]
     cron_jobs = [
         cron(crm_daily_backup_job, hour=0, minute=0), # Todos los días a la medianoche
         cron(autopilot_sweeper_job, minute=set(range(60))), # Se ejecuta cada minuto automáticamente (0% sobrecarga)
-        cron(appointment_2h_reminder_cron_job, minute=set(range(0, 60, 15))), # Cada 15 minutos
-        cron(appointment_24h_reminder_cron_job, minute=set(range(0, 60, 30))) # Cada 30 minutos
     ]
     redis_settings = redis_settings

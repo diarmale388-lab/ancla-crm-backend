@@ -46,10 +46,13 @@ def _resolve_modality_bucket(appointment_type: str) -> str:
     Normaliza el appointment_type de BD a una de las 3 modalidades EXACTAS y no intercambiables:
     'PRESENCIAL', 'LLAMADA' o 'VIRTUAL'. Ver arquitectura de modalidades en ai_agent/tools.py.
     """
+    import re
     modality_str = (appointment_type or "VIRTUAL").upper()
-    if any(w in modality_str for w in ["PRESENCIAL", "SHOWROOM", "VISITA", "ARMENIA"]):
+    if re.search(r'\b(PRESENCIAL|SHOWROOM|VISITA|ARMENIA)\b', modality_str):
         return "PRESENCIAL"
-    if any(w in modality_str for w in ["LLAMADA", "TELEFON", "CALL"]):
+    if re.search(r'\b(VIRTUAL|VIDEOLLAMADA|MEET|ZOOM)\b', modality_str):
+        return "VIRTUAL"
+    if re.search(r'\b(LLAMADA|TELEFONICA|TELEFONO|CALL)\b', modality_str):
         return "LLAMADA"
     return "VIRTUAL"
 

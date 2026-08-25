@@ -70,10 +70,12 @@ def get_contacts_with_last_message(
 ) -> Any:
     """
     Recupera los contactos asignados al asesor actual (o todos si es administrador),
-    incluyendo el contenido y fecha de su último mensaje de forma optimizada.
+    incluyendo el contenido y fecha de su último mensaje y su última nota de bitácora
+    comercial (con próximo paso), de forma optimizada (sin N+1).
     """
     from datetime import datetime
     from sqlalchemy import func, desc
+    from app.models.base import AdvisorBitacoraNote
     
     # Si el usuario es Asesor, solo ve sus prospectos asignados. Si es Admin, ve todos los prospectos.
     role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
@@ -100,12 +102,28 @@ def get_contacts_with_last_message(
     
     # Crear diccionario O(1) de mapeo
     last_msg_dict = {msg.contact_id: msg for msg in last_messages_list}
+
+    # OPTIMIZACIÓN N+1: Obtener la última nota de bitácora (próximo paso) de cada contacto
+    bitacora_subquery = db.query(
+        AdvisorBitacoraNote.contact_id,
+        func.max(AdvisorBitacoraNote.id).label("max_id")
+    ).group_by(AdvisorBitacoraNote.contact_id).subquery()
+
+    last_notes_list = db.query(AdvisorBitacoraNote).join(
+        bitacora_subquery,
+        AdvisorBitacoraNote.id == bitacora_subquery.c.max_id
+    ).all()
+    last_note_dict = {n.contact_id: n for n in last_notes_list}
+
+    # Mapa O(1) de asesores para resolver el nombre del responsable asignado
+    user_map = {u.id: u.full_name for u in db.query(User).all()}
     
     results = []
     
     for contact in contacts:
         # Recuperación en memoria O(1)
         last_msg = last_msg_dict.get(contact.id)
+        last_note = last_note_dict.get(contact.id)
         effective_time = last_msg.created_at if last_msg else contact.created_at
             
         results.append({
@@ -116,6 +134,7 @@ def get_contacts_with_last_message(
             "phone": contact.phone,
             "source": contact.source,
             "assigned_user_id": contact.assigned_user_id,
+            "assigned_user_name": user_map.get(contact.assigned_user_id) if contact.assigned_user_id else "Sin Asignar",
             "chatbot_enabled": contact.chatbot_enabled,
             "avatar_url": contact.avatar_url,
             "interest_product": contact.interest_product,
@@ -125,6 +144,20 @@ def get_contacts_with_last_message(
             "lot_status": contact.lot_status,
             "lot_city": contact.lot_city,
             "client_type": contact.client_type,
+            "created_at": contact.created_at,
+            "quoted_value": contact.quoted_value,
+            "estimated_budget": contact.estimated_budget,
+            "preferred_contact_method": contact.preferred_contact_method,
+            "advisor_status": contact.advisor_status,
+            "last_bitacora_note": {
+                "id": last_note.id,
+                "note_type": last_note.note_type,
+                "content": last_note.content,
+                "next_action": last_note.next_action,
+                "next_action_date": last_note.next_action_date,
+                "author_name": last_note.author_name,
+                "created_at": last_note.created_at
+            } if last_note else None,
             "last_message_content": last_msg.content if last_msg else None,
             "last_message_time": effective_time,
             "last_message_sender": last_msg.sender_type if last_msg else None
@@ -1171,9 +1204,9 @@ async def approve_special_request(
         f"¡Excelente noticia, {client_name}! 😊 Nuestra Directora Comercial **Liliana León** ha revisado tu solicitud y con gusto te atenderá en este espacio extraordinario.\n\n"
         f"**Detalles de tu Asesoría VIP:**\n"
         f"- **Atiende:** Liliana León (Dirección Comercial)\n"
-        f"- **Modalidad:** Asesoría Virtual (Google Meet / Videollamada)\n"
+        f"- **Modalidad:** Asesoría Virtual (Videollamada)\n"
         f"- **Fecha y Hora:** {formatted_date_str}\n"
-        f"- **Enlace:** Se compartirá por este medio antes de iniciar la sesión.\n\n"
+        f"- **Acceso:** Nuestro equipo te contactará directamente por videollamada de WhatsApp a esta línea a la hora acordada.\n\n"
         f"Nuestro equipo de expertos estará listo para compartirte los planos técnicos, renders 3D y la cotización personalizada de tu proyecto modular. ¡Nos vemos pronto! 🏡✨"
     )
 

@@ -866,6 +866,7 @@ async def generar_y_enviar_propuesta_pdf(datos_cliente: Dict[str, Any]) -> str:
 
         env = Environment(loader=FileSystemLoader(templates_dir), autoescape=True)
         template = env.get_template("propuesta.html.j2")
+        html_renderizado = template.render(**datos_cliente)
         # 2. Generación del PDF (CPU-bound) con url_fetcher securizado (Anti-SSRF / Anti-LFI)
         def _safe_url_fetcher(url):
             from urllib.parse import urlparse
