@@ -91,8 +91,16 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
     except Exception:
         pass
 
-    # 1. PREFIJO ESTÁTICO (Invariable, cacheado automáticamente al 50% por OpenAI / 90% por Anthropic)
-    static_system_message = SystemMessage(content=SALES_EXPERT_PROMPT)
+    # 1. PREFIJO ESTÁTICO (Invariable, cacheado con 90% de descuento en Anthropic/OpenRouter)
+    static_system_message = SystemMessage(
+        content=[
+            {
+                "type": "text",
+                "text": SALES_EXPERT_PROMPT,
+                "cache_control": {"type": "ephemeral"}
+            }
+        ]
+    )
 
     # 2. SUFIJO DINÁMICO (Datos específicos del cliente actual y hora)
     dynamic_context_str = (
@@ -130,12 +138,12 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
 
     api_key = ai_settings.OPENROUTER_API_KEY.strip()
     
-    # Inicializar LLM vía OpenRouter con límite de tokens optimizado
+    # Inicializar LLM vía OpenRouter con Prompt Caching y límite de tokens optimizado
     llm = ChatOpenAI(
         model=ai_settings.SALES_EXPERT_MODEL,
         openai_api_key=api_key,
         openai_api_base=ai_settings.OPENROUTER_BASE_URL,
-        temperature=0.4,
+        temperature=0.3,
         max_tokens=350,
         default_headers={
             "HTTP-Referer": ai_settings.HTTP_REFERER,

@@ -635,18 +635,26 @@ async def save_appointment(
 @tool
 async def cancel_appointment(phone: str, reason: str = "Cancelada a solicitud del cliente") -> Dict[str, Any]:
     """
-    [PUENTE CRM] Cancela oficialmente la cita activa (CONFIRMED o PENDING) de un cliente en la base de datos.
-
-    ⚠️ OBLIGATORIO invocar esta herramienta ÚNICAMENTE cuando el cliente exprese una orden o deseo EXPLÍCITO e INEQUÍVOCO de cancelar o no asistir a su cita (ej: "Cancela la cita", "Cancéleme", "No voy a poder asistir", "No quiero la cita", "Ya no estoy interesado").
-    ⛔ TERMINANTEMENTE PROHIBIDO invocar esta herramienta si el cliente solo usa muletillas conversacionales como "No, la verdad necesito...", expresa dudas sobre precios o pide modelos más rápidos/económicos. En esos casos NUNCA canceles la cita; asesóralo manteniendo la cita programada.
+    [PUENTE CRM] Cancela la cita activa (CONFIRMED/PENDING) de un cliente en la base de datos.
+    Invocar ÚNICAMENTE ante órdenes EXPLÍCITAS de cancelación (ej: 'cancela la cita', 'no voy a ir').
+    PROHIBIDO invocar si el cliente usa muletillas como 'No, la verdad necesito...' o dudas de lote/precio.
 
     Args:
-        phone: Número telefónico del cliente (ID del hilo).
-        reason: Motivo de la cancelación indicado o inferido de la conversación.
-
-    Returns:
-        Confirmación de la cancelación con el ID de la cita cancelada.
+        phone: Número telefónico del cliente.
+        reason: Motivo de la cancelación.
     """
+    # ── GUARDIA PRAGMÁTICA DE DOBLE CERROJO EN PYTHON ─────────────────
+    from ai_agent.nodes.pragmatic_guard import validate_cancellation_guard
+    is_allowed, guard_reason = validate_cancellation_guard(reason)
+    if not is_allowed:
+        return {
+            "status": "cancellation_blocked",
+            "success": False,
+            "blocked_by_guard": True,
+            "message": f"Cancelación RECHAZADA por Guardia Pragmática: {guard_reason}. La cita permanece CONFIRMADA. Asesora al cliente normalmente sin cancelar.",
+            "phone": phone
+        }
+    # ──────────────────────────────────────────────────────────────────
     try:
         from app.database import SessionLocal
         from app.models.base import Contact, Appointment

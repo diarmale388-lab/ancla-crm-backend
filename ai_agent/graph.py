@@ -77,6 +77,33 @@ async def human_handover_node(state: AgentState) -> Dict[str, Any]:
     return {"messages": [AIMessage(content=handover_message)], "requires_human": True}
 
 
+from ai_agent.nodes.deterministic_confirmation import deterministic_confirmation_node
+
+
+def route_after_tool_execution(state: AgentState) -> Literal["deterministic_confirmation_node", "sales_expert_node"]:
+    """
+    Arista condicional post-ejecución de herramientas:
+    Si la herramienta fue agendamiento o cancelación (save_appointment, cancel_appointment),
+    enruta directamente a deterministic_confirmation_node para emitir la plantilla oficial
+    en Python sin realizar un segundo ciclo de inferencia costoso al LLM.
+    Si fue consulta de disponibilidad o base de conocimiento, regresa a sales_expert_node
+    para que la IA ofrezca las opciones con lenguaje natural.
+    """
+    messages = state.get("messages", [])
+    last_tool_msg = None
+    for m in reversed(messages):
+        if getattr(m, "type", "") == "tool" or m.__class__.__name__ == "ToolMessage":
+            last_tool_msg = m
+            break
+            
+    if last_tool_msg:
+        tool_name = getattr(last_tool_msg, "name", "")
+        if tool_name in ("save_appointment", "cancel_appointment"):
+            return "deterministic_confirmation_node"
+            
+    return "sales_expert_node"
+
+
 def build_sofi_graph():
     """
     Construye y compila el StateGraph autónomo de Sofi AI.
@@ -89,6 +116,7 @@ def build_sofi_graph():
     workflow.add_node("sales_expert_node", sales_expert_node)
     workflow.add_node("human_handover_node", human_handover_node)
     workflow.add_node("tools", tool_executor_node)
+    workflow.add_node("deterministic_confirmation_node", deterministic_confirmation_node)
     
     # 2. Configurar Entrada y Guardia chatbot_enabled
     workflow.add_edge(START, "entry_guard")
@@ -122,9 +150,16 @@ def build_sofi_graph():
         }
     )
     
-    # 5. Retorno desde Ejecutor de Herramientas hacia Sales Expert
-    workflow.add_edge("tools", "sales_expert_node")
-
+    # 5. Retorno Eficiente desde Herramientas (Erradicación del Doble Salto)
+    workflow.add_conditional_edges(
+        "tools",
+        route_after_tool_execution,
+        {
+            "deterministic_confirmation_node": "deterministic_confirmation_node",
+            "sales_expert_node": "sales_expert_node"
+        }
+    )
+    workflow.add_edge("deterministic_confirmation_node", END)
     
     # 7. Compilar con Memoria Persistente de Sesión (thread_id = phone)
     checkpointer = MemorySaver()
