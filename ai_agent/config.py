@@ -32,9 +32,9 @@ class AIAgentSettings(BaseSettings):
     OPENROUTER_API_KEY: str = get_dynamic_openrouter_key()
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
     
-    CLASSIFIER_MODEL: str = os.getenv("AI_CLASSIFIER_MODEL", "google/gemini-2.0-flash-001")
-    SALES_EXPERT_MODEL: str = os.getenv("AI_SALES_EXPERT_MODEL", "anthropic/claude-3.7-sonnet")
-    DOCS_EXPERT_MODEL: str = os.getenv("AI_DOCS_EXPERT_MODEL", "deepseek/deepseek-chat")
+    CLASSIFIER_MODEL: str = os.getenv("AI_CLASSIFIER_MODEL", "google/gemini-3.7-flash")
+    SALES_EXPERT_MODEL: str = os.getenv("AI_SALES_EXPERT_MODEL", "anthropic/claude-sonnet-5")
+    DOCS_EXPERT_MODEL: str = os.getenv("AI_DOCS_EXPERT_MODEL", "deepseek/deepseek-v4-pro")
 
 
 
