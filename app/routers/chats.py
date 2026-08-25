@@ -820,6 +820,8 @@ Conversación:
 {chat_text}"""
 
         try:
+            from ai_agent.config import ai_settings
+            model_to_use = ai_settings.DOCS_EXPERT_MODEL or "deepseek/deepseek-v4-pro"
             async with httpx.AsyncClient(timeout=20.0) as client:
                 res = await client.post(
                     "https://openrouter.ai/api/v1/chat/completions",
@@ -830,7 +832,7 @@ Conversación:
                         "X-Title": "ANCLA CRM Sofi AI"
                     },
                     json={
-                        "model": "openai/gpt-4o-mini",
+                        "model": model_to_use,
                         "messages": [{"role": "user", "content": prompt}],
                         "temperature": 0.2,
                         "max_tokens": 350
