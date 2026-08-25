@@ -19,6 +19,38 @@ router = APIRouter(prefix="/chats", tags=["chats"])
 
 from pydantic import BaseModel
 from typing import Optional
+import unicodedata
+
+# ─────────────────────────────────────────────────────────────
+# Regla de negocio: Diego (CTO / Admin técnico) y cualquier cuenta
+# administrativa NO comercial nunca deben aparecer como asesor asignado
+# a un lead. Los únicos asesores comerciales válidos son Liliana León
+# (Dirección Comercial) y Harvey Covaleda. Todo lo demás (null, id de
+# admin técnico, cuentas deshabilitadas, etc.) se resuelve oficialmente
+# hacia Liliana León (Dirección) como responsable por defecto.
+# ─────────────────────────────────────────────────────────────
+COMMERCIAL_ADVISOR_DEFAULT_NAME = "Liliana León (Dirección)"
+
+
+def _normalize_ascii(text: Optional[str]) -> str:
+    if not text:
+        return ""
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).lower()
+
+
+def _is_commercial_advisor_name(full_name: Optional[str]) -> bool:
+    normalized = _normalize_ascii(full_name)
+    return "liliana" in normalized or "harvey" in normalized
+
+
+def _resolve_advisor_display_name(assigned_user_id: Optional[int], user_map: dict) -> str:
+    """Resuelve el nombre de asesor a mostrar en la UI, garantizando que Diego
+    (u otra cuenta técnica/no comercial) nunca se muestre como responsable de un lead."""
+    raw_name = user_map.get(assigned_user_id) if assigned_user_id else None
+    if raw_name and _is_commercial_advisor_name(raw_name):
+        return raw_name
+    return COMMERCIAL_ADVISOR_DEFAULT_NAME
 
 class CreateContactSchema(BaseModel):
     first_name: str
@@ -134,7 +166,7 @@ def get_contacts_with_last_message(
             "phone": contact.phone,
             "source": contact.source,
             "assigned_user_id": contact.assigned_user_id,
-            "assigned_user_name": user_map.get(contact.assigned_user_id) if contact.assigned_user_id else "Sin Asignar",
+            "assigned_user_name": _resolve_advisor_display_name(contact.assigned_user_id, user_map),
             "chatbot_enabled": contact.chatbot_enabled,
             "avatar_url": contact.avatar_url,
             "interest_product": contact.interest_product,
@@ -1065,10 +1097,14 @@ def get_agents(
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
-    Retorna la lista de asesores registrados activos para poblar el selector de reasignación.
+    Retorna la lista de asesores comerciales activos para poblar el selector de reasignación
+    y el filtro de Seguimiento Comercial. Excluye deliberadamente a Diego (CTO / Admin técnico)
+    y cualquier otra cuenta administrativa no comercial: solo Liliana León y Harvey Covaleda
+    atienden leads comerciales.
     """
     agents = db.query(User).filter(User.is_active == True).all()
-    return [{"id": a.id, "full_name": a.full_name, "email": a.email, "role": a.role} for a in agents]
+    commercial_agents = [a for a in agents if _is_commercial_advisor_name(a.full_name)]
+    return [{"id": a.id, "full_name": a.full_name, "email": a.email, "role": a.role} for a in commercial_agents]
 
 
 class SpecialRequestApprovePayload(BaseModel):
