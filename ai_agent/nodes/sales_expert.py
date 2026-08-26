@@ -46,14 +46,17 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
 
     api_key = ai_settings.OPENROUTER_API_KEY.strip()
     
-    # Inicializar LLM vía OpenRouter con Prompt Caching de 1h y razonamiento calibrado ("low")
+    # Inicializar LLM vía OpenRouter con Prompt Caching de 1h, razonamiento ("low") y enrutamiento a Anthropic Direct
     llm = ChatOpenAI(
         model=ai_settings.SALES_EXPERT_MODEL,
         openai_api_key=api_key,
         openai_api_base=ai_settings.OPENROUTER_BASE_URL,
         temperature=0.3,
         max_tokens=1000,
-        extra_body={"reasoning": {"effort": "low"}},
+        extra_body={
+            "reasoning": {"effort": "low"},
+            "provider": {"order": ["Anthropic"], "allow_fallbacks": True}
+        },
         default_headers={
             "HTTP-Referer": ai_settings.HTTP_REFERER,
             "X-Title": ai_settings.SITE_NAME,

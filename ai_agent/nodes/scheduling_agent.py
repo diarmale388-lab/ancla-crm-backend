@@ -57,6 +57,9 @@ async def scheduling_agent_node(state: AgentState) -> Dict[str, Any]:
         openai_api_base=ai_settings.OPENROUTER_BASE_URL,
         temperature=0.2,
         max_tokens=700,
+        extra_body={
+            "provider": {"order": ["Anthropic"], "allow_fallbacks": True}
+        },
         default_headers={
             "HTTP-Referer": ai_settings.HTTP_REFERER,
             "X-Title": ai_settings.SITE_NAME,
