@@ -91,13 +91,13 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
     except Exception:
         pass
 
-    # 1. PREFIJO ESTÁTICO (Invariable, cacheado con 90% de descuento en Anthropic/OpenRouter)
+    # 1. PREFIJO ESTÁTICO (Invariable, cacheado con 90% de descuento en Anthropic/OpenRouter con TTL extendido de 1 hora)
     static_system_message = SystemMessage(
         content=[
             {
                 "type": "text",
                 "text": SALES_EXPERT_PROMPT,
-                "cache_control": {"type": "ephemeral"}
+                "cache_control": {"type": "ephemeral", "ttl": "1h"}
             }
         ]
     )
@@ -138,13 +138,14 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
 
     api_key = ai_settings.OPENROUTER_API_KEY.strip()
     
-    # Inicializar LLM vía OpenRouter con Prompt Caching y límite de tokens optimizado
+    # Inicializar LLM vía OpenRouter con Prompt Caching de 1h y razonamiento calibrado ("low")
     llm = ChatOpenAI(
         model=ai_settings.SALES_EXPERT_MODEL,
         openai_api_key=api_key,
         openai_api_base=ai_settings.OPENROUTER_BASE_URL,
         temperature=0.3,
         max_tokens=1000,
+        extra_body={"reasoning": {"effort": "low"}},
         default_headers={
             "HTTP-Referer": ai_settings.HTTP_REFERER,
             "X-Title": ai_settings.SITE_NAME,
