@@ -183,7 +183,8 @@ class AIEngine:
             final_state = await sofi_ai_agent.ainvoke(input_state, config=config)
             initial_msg_count = len(input_state.get("messages", []))
             all_state_msgs = final_state.get("messages", [])
-            new_msgs = all_state_msgs[initial_msg_count:] if len(all_state_msgs) > initial_msg_count else all_state_msgs[-1:]
+            # NUNCA tomar mensajes previos si no se generó uno nuevo; solo considerar mensajes estrictamente nuevos
+            new_msgs = all_state_msgs[initial_msg_count:] if len(all_state_msgs) > initial_msg_count else []
 
             save_appointment_executed = False
             for msg in all_state_msgs:

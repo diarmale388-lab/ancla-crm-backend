@@ -144,7 +144,7 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
         openai_api_key=api_key,
         openai_api_base=ai_settings.OPENROUTER_BASE_URL,
         temperature=0.3,
-        max_tokens=350,
+        max_tokens=1000,
         default_headers={
             "HTTP-Referer": ai_settings.HTTP_REFERER,
             "X-Title": ai_settings.SITE_NAME,
