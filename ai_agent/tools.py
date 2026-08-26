@@ -1009,3 +1009,13 @@ ALL_AI_TOOLS = [
     generar_y_enviar_propuesta_pdf,
     solicitar_autorizacion_cita_nocturna
 ]
+
+# Herramientas Scoped (acotadas) para scheduling_node (Claude Haiku): únicamente lo
+# estrictamente mecánico de agenda. NO incluye generar_y_enviar_propuesta_pdf ni
+# update_lead_status para mantener el prompt/ventana de contexto mínimos.
+SCHEDULING_TOOLS = [
+    consultar_disponibilidad,
+    save_appointment,
+    cancel_appointment,
+    solicitar_autorizacion_cita_nocturna
+]

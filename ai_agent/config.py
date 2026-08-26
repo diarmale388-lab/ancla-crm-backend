@@ -34,6 +34,7 @@ class AIAgentSettings(BaseSettings):
     
     CLASSIFIER_MODEL: str = os.getenv("AI_CLASSIFIER_MODEL", "google/gemini-3.7-flash")
     SALES_EXPERT_MODEL: str = os.getenv("AI_SALES_EXPERT_MODEL", "anthropic/claude-sonnet-5")
+    SCHEDULING_MODEL: str = os.getenv("AI_SCHEDULING_MODEL", "anthropic/claude-haiku-4.5")
     DOCS_EXPERT_MODEL: str = os.getenv("AI_DOCS_EXPERT_MODEL", "deepseek/deepseek-v4-pro")
 
 

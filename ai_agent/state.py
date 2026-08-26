@@ -24,6 +24,9 @@ class AgentState(TypedDict):
         meta_ads_lead_data: Datos extraídos silenciosamente de formularios de Meta Ads.
         requires_human: Indicador para pausar el bot y transferir a un ejecutivo humano.
         metadata: Diccionario extensible para metadatos adicionales de la interacción.
+        active_agent: Nodo visible seleccionado por el router ("sales_expert_node",
+            "scheduling_node" o "human_handover_node"). Opcional para retrocompatibilidad
+            con invocaciones que aún no lo establecen (por defecto sales_expert_node).
     """
     messages: Annotated[List[BaseMessage], add_messages]
     phone: str
@@ -34,4 +37,5 @@ class AgentState(TypedDict):
     meta_ads_lead_data: Optional[Dict[str, Any]]
     requires_human: bool
     metadata: Dict[str, Any]
+    active_agent: Optional[str]
 

@@ -15,6 +15,7 @@ from langgraph.prebuilt import tools_condition
 from ai_agent.state import AgentState
 from ai_agent.nodes.classifier import classifier_node
 from ai_agent.nodes.sales_expert import sales_expert_node
+from ai_agent.nodes.scheduling_agent import scheduling_agent_node
 from ai_agent.nodes.simple_interaction import simple_interaction_node
 from ai_agent.nodes.tool_executor import tool_executor_node
 
@@ -36,16 +37,20 @@ def check_chatbot_status(state: AgentState) -> Literal["classifier_node", "__end
     return "classifier_node"
 
 
-def route_by_intent(state: AgentState) -> Literal["sales_expert_node", "human_handover_node"]:
+def route_by_intent(state: AgentState) -> Literal["sales_expert_node", "scheduling_node", "human_handover_node"]:
     """
-    Arista condicional: TODO el tráfico conversacional se enruta directamente a sales_expert_node (Claude).
-    ÚNICAMENTE se enruta a human_handover_node si el cliente solicitó atención humana explícita
-    (que a su vez genera un mensaje de cortesía y ejecuta la desactivación del piloto automático,
-    en lugar de dejar al cliente sin respuesta).
+    Arista condicional: enruta según el "active_agent" calculado por classifier_node (Regla de Oro:
+    Precio/Objeción de catálogo SIEMPRE a sales_expert_node > Solicitud puramente mecánica de agenda
+    a scheduling_node (Claude Haiku) > Resto del tráfico conversacional a sales_expert_node).
+    ÚNICAMENTE se enruta a human_handover_node si el cliente solicitó atención humana explícita.
     """
     intent = state.get("intent", "SALES_CONVERSATION")
     if intent == "HUMAN_HANDOVER" or state.get("requires_human", False):
         return "human_handover_node"
+
+    active_agent = state.get("active_agent") or "sales_expert_node"
+    if active_agent == "scheduling_node":
+        return "scheduling_node"
     return "sales_expert_node"
 
 
@@ -80,15 +85,19 @@ async def human_handover_node(state: AgentState) -> Dict[str, Any]:
 from ai_agent.nodes.deterministic_confirmation import deterministic_confirmation_node
 
 
-def route_after_tool_execution(state: AgentState) -> Literal["deterministic_confirmation_node", "sales_expert_node"]:
+def route_after_tool_execution(state: AgentState) -> Literal["deterministic_confirmation_node", "sales_expert_node", "scheduling_node"]:
     """
     Arista condicional post-ejecución de herramientas:
     Si la herramienta fue agendamiento o cancelación (save_appointment, cancel_appointment),
     enruta directamente a deterministic_confirmation_node para emitir la plantilla oficial
     en Python sin realizar un segundo ciclo de inferencia costoso al LLM.
-    Si fue consulta de disponibilidad o base de conocimiento, regresa a sales_expert_node
-    para que la IA ofrezca las opciones con lenguaje natural.
+    Si fue consulta de disponibilidad u otra herramienta informativa, regresa al MISMO nodo
+    visible que originó la llamada (state["active_agent"]) para que continúe la conversación
+    en el mismo tono/modelo, evitando un salto de agente a mitad de turno (cero amnesia).
     """
+    active_agent = state.get("active_agent") or "sales_expert_node"
+    fallback_node = "scheduling_node" if active_agent == "scheduling_node" else "sales_expert_node"
+
     messages = state.get("messages", [])
     last_tool_msg = None
     for m in reversed(messages):
@@ -106,14 +115,14 @@ def route_after_tool_execution(state: AgentState) -> Literal["deterministic_conf
             data = {}
 
         # Si la cancelación fue bloqueada por guardia pragmática (muletilla del cliente),
-        # volvemos a sales_expert_node para que Claude asesore su duda con calidez natural
+        # volvemos al nodo visible de origen para que Claude asesore su duda con calidez natural
         if tool_name == "cancel_appointment" and (data.get("status") == "cancellation_blocked" or data.get("blocked_by_guard")):
-            return "sales_expert_node"
+            return fallback_node
 
         if tool_name in ("save_appointment", "cancel_appointment"):
             return "deterministic_confirmation_node"
             
-    return "sales_expert_node"
+    return fallback_node
 
 
 def build_sofi_graph():
@@ -126,6 +135,7 @@ def build_sofi_graph():
     workflow.add_node("entry_guard", entry_guard_node)
     workflow.add_node("classifier_node", classifier_node)
     workflow.add_node("sales_expert_node", sales_expert_node)
+    workflow.add_node("scheduling_node", scheduling_agent_node)
     workflow.add_node("human_handover_node", human_handover_node)
     workflow.add_node("tools", tool_executor_node)
     workflow.add_node("deterministic_confirmation_node", deterministic_confirmation_node)
@@ -141,18 +151,21 @@ def build_sofi_graph():
         }
     )
     
-    # 3. Configurar Enrutamiento Directo a Claude desde Clasificador (o a Handover Humano)
+    # 3. Configurar Enrutamiento Directo desde Clasificador (Router Supervisor) hacia el
+    #    nodo visible correspondiente: sales_expert_node (Sonnet), scheduling_node (Haiku)
+    #    o human_handover_node.
     workflow.add_conditional_edges(
         "classifier_node",
         route_by_intent,
         {
             "sales_expert_node": "sales_expert_node",
+            "scheduling_node": "scheduling_node",
             "human_handover_node": "human_handover_node"
         }
     )
     workflow.add_edge("human_handover_node", END)
     
-    # 4. Configurar Enrutamiento de Herramientas (Tool Calling) desde Sales Expert
+    # 4. Configurar Enrutamiento de Herramientas (Tool Calling) desde ambos nodos visibles
     workflow.add_conditional_edges(
         "sales_expert_node",
         tools_condition,
@@ -161,14 +174,24 @@ def build_sofi_graph():
             END: END
         }
     )
+    workflow.add_conditional_edges(
+        "scheduling_node",
+        tools_condition,
+        {
+            "tools": "tools",
+            END: END
+        }
+    )
     
-    # 5. Retorno Eficiente desde Herramientas (Erradicación del Doble Salto)
+    # 5. Retorno Eficiente desde Herramientas (Erradicación del Doble Salto): confirma
+    #    determinísticamente en Python, o regresa al MISMO nodo visible que originó la llamada.
     workflow.add_conditional_edges(
         "tools",
         route_after_tool_execution,
         {
             "deterministic_confirmation_node": "deterministic_confirmation_node",
-            "sales_expert_node": "sales_expert_node"
+            "sales_expert_node": "sales_expert_node",
+            "scheduling_node": "scheduling_node"
         }
     )
     workflow.add_edge("deterministic_confirmation_node", END)

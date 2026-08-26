@@ -14,82 +14,16 @@ from ai_agent.config import ai_settings
 from ai_agent.state import AgentState
 from ai_agent.prompts import SALES_EXPERT_PROMPT
 from ai_agent.tools import ALL_AI_TOOLS
+from ai_agent.context import build_dynamic_context_str, get_sanitized_history
 
 
 async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
     """
-    Nodo comercial principal impulsado por Claude 3.5 Sonnet vía OpenRouter.
+    Nodo comercial principal impulsado por Claude Sonnet vía OpenRouter.
+    Única voz visible para calificación, objeciones de precio/catálogo y negociación.
     """
     messages = list(state.get("messages", []))
-    phone = state.get("phone", "")
     user_name = state.get("user_name", "")
-    meta_ads_lead_data = state.get("meta_ads_lead_data")
-    
-    import datetime as dt_tz
-    try:
-        from zoneinfo import ZoneInfo
-        bogota_now = dt_tz.datetime.now(ZoneInfo("America/Bogota"))
-    except Exception:
-        bogota_now = dt_tz.datetime.now(dt_tz.timezone(dt_tz.timedelta(hours=-5)))
-    current_time_str = bogota_now.strftime("%Y-%m-%d %I:%M %p")
-
-    dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
-    meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-    hoy_es = f"{dias[bogota_now.weekday()]} {bogota_now.day} de {meses[bogota_now.month - 1]} de {bogota_now.year}"
-    manana_dt = bogota_now + dt_tz.timedelta(days=1)
-    manana_es = f"{dias[manana_dt.weekday()]} {manana_dt.day} de {meses[manana_dt.month - 1]}"
-
-    
-    # Formatear contexto de formulario de Meta Ads si está presente
-    lead_context_str = ""
-    modalidad_preferida_str = "NO_ESPECIFICADA"
-    if meta_ads_lead_data and isinstance(meta_ads_lead_data, dict):
-        lead_context_str = "\n[DATOS EXTRAÍDOS DE FORMULARIO META ADS DE ESTE CLIENTE]:\n"
-        for k, v in meta_ads_lead_data.items():
-            lead_context_str += f"- {k}: {v}\n"
-        lead_context_str += "⚠️ REGLA: Reconoce estos datos y no le vuelvas a preguntar lo que el cliente ya respondió en el formulario."
-
-        # ⚠️ ARQUITECTURA DE MODALIDADES EXACTAS: propagar la preferencia LLAMADA/VIRTUAL/PRESENCIAL
-        # extraída del formulario Meta Ads (Regla 25 de SALES_EXPERT_PROMPT) sin volver a preguntarla.
-        raw_modalidad = str(meta_ads_lead_data.get("modalidad_preferida") or "").upper().strip()
-        if "LLAMADA" in raw_modalidad or "TELEFON" in raw_modalidad:
-            modalidad_preferida_str = "LLAMADA"
-        elif "PRESENCIAL" in raw_modalidad or "SHOWROOM" in raw_modalidad:
-            modalidad_preferida_str = "PRESENCIAL"
-        elif "VIRTUAL" in raw_modalidad:
-            modalidad_preferida_str = "VIRTUAL"
-
-    # Extracción de estado relacional de la BD
-    contact_modality = state.get("metadata", {}).get("scheduling_state") or "NO_DEFINIDA"
-    contact_has_land = state.get("metadata", {}).get("has_land", "No especificado")
-    contact_location = state.get("metadata", {}).get("location", "No especificado")
-    contact_active_appointment = state.get("metadata", {}).get("active_appointment", "Ninguna")
-
-    # Determinar si es el primer mensaje del cliente o conversación en curso
-    human_count = sum(1 for m in messages if getattr(m, 'type', '') == 'human' or getattr(m, 'sender_type', '') in ['contact', 'user'])
-    is_first_interaction = human_count <= 1
-
-    interaction_instruction = (
-        "\n[INSTRUCCIÓN DE CONTROL DE CONVERSACIÓN - PRIMER CONTACTO]:\n"
-        "⚠️ ESTE ES EL PRIMER MENSAJE QUE EL CLIENTE ENVÍA EN EL CHAT. ES ABSOLUTAMENTE OBLIGATORIO SALUDAR CÁLIDAMENTE Y DAR LA BIENVENIDA A ANCLA SPECIAL PROJECTS ANTES DE RESPONDER O AGENDAR."
-        if is_first_interaction else
-        "\n[INSTRUCCIÓN DE CONTROL DE CONVERSACIÓN - CONTINUACIÓN DE CHAT]:\n"
-        "Este mensaje es la continuación de una conversación en curso. NO REPITAS el saludo inicial ni la bienvenida para mantener el diálogo natural."
-    )
-
-    # Recuperar Directrices Oficiales Aprobadas por Dirección General (Candados 1 y 2)
-    approved_guidelines_str = ""
-    try:
-        from app.database import SessionLocal
-        from app.models.base import AIKnowledgeApproval
-        with SessionLocal() as db_session:
-            approved_items = db_session.query(AIKnowledgeApproval).filter(AIKnowledgeApproval.status == "APPROVED").all()
-            if approved_items:
-                approved_guidelines_str = "\n[DIRECTRICES TÉCNICAS OFICIALES APROBADAS POR DIRECCIÓN GENERAL (CUMPLIMIENTO OBLIGATORIO)]:\n"
-                for item in approved_items:
-                    approved_guidelines_str += f"• TEMA: {item.topic}\n  - Consulta/Duda: {item.detected_question}\n  - Respuesta Oficial Autorizada: {item.official_answer}\n"
-    except Exception:
-        pass
 
     # 1. PREFIJO ESTÁTICO (Invariable, cacheado con 90% de descuento en Anthropic/OpenRouter con TTL extendido de 1 hora)
     static_system_message = SystemMessage(
@@ -102,37 +36,11 @@ async def sales_expert_node(state: AgentState) -> Dict[str, Any]:
         ]
     )
 
-    # 2. SUFIJO DINÁMICO (Datos específicos del cliente actual y hora)
-    dynamic_context_str = (
-        f"[ESTADO RELACIONAL DEL CONTACTO EN POSTGRESQL]:\n"
-        f"- Teléfono: {phone}\n"
-        f"- Nombre cliente: {user_name if user_name else 'No especificado aún'}\n"
-        f"- Modalidad elegida en BD: {contact_modality}\n"
-        f"- Modalidad preferida (Formulario Meta Ads, ver Regla 25): {modalidad_preferida_str}\n"
-        f"- ¿Posee lote propio?: {contact_has_land}\n"
-        f"- Ubicación / Ciudad: {contact_location}\n"
-        f"- Cita actualmente agendada: {contact_active_appointment}\n"
-        f"- Fecha Actual (Colombia): {hoy_es} ({current_time_str})\n"
-        f"- Mañana es: {manana_es}\n"
-        f"⚠️ PROHIBIDO cambiar el día de la semana de una fecha. NUNCA OFREZCAS DÍAS NI HORAS ANTERIORES A ESTA FECHA/HORA.\n"
-        f"⚠️ RECUERDA: LLAMADA es LLAMADA y VIRTUAL es VIRTUAL (modalidades distintas y no intercambiables). PROHIBIDO imprimir cualquier link de Google Meet.\n"
-        f"{approved_guidelines_str}"
-        f"{lead_context_str}"
-        f"{interaction_instruction}"
-    )
-    dynamic_system_message = SystemMessage(content=dynamic_context_str)
+    # 2. SUFIJO DINÁMICO COMPARTIDO (idéntico al inyectado en scheduling_node: cero divergencia de estado)
+    dynamic_system_message = SystemMessage(content=build_dynamic_context_str(state))
 
-
-    # Sanitización de historial para eliminar plantillas antiguas redundantes y mensajes duplicados
-    try:
-        from app.services.history_sanitizer import sanitize_chat_history_for_llm
-        sanitized_history = sanitize_chat_history_for_llm(messages)
-    except Exception:
-        sanitized_history = messages
-
-    # Ventana Deslizante de Memoria Inteligente (últimos 10 a 12 mensajes)
-    if len(sanitized_history) > 12:
-        sanitized_history = sanitized_history[-12:]
+    # Sanitización + Ventana Deslizante de Memoria Inteligente (últimos 10 a 12 mensajes)
+    sanitized_history = get_sanitized_history(messages)
 
     prompt_messages = [static_system_message, dynamic_system_message] + sanitized_history
 
